@@ -1,0 +1,3 @@
+[workspace]
+members = ["monster-viewer-gui", "monster-viewer",]
+resolver = "3"
