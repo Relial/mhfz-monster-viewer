@@ -19,7 +19,7 @@ use tracing::info;
 
 use crate::{
     game_data::{DamageInstance, Monster},
-    ui::{Highlight, HzvColumn},
+    ui::{Highlight, HighlightID, HzvColumn},
 };
 
 #[derive(Deserialize)]
@@ -71,10 +71,13 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, Vec<
                                             for (i, change) in changes.iter().enumerate() {
                                                 if *change {
                                                     highlights.push(Highlight {
-                                                        monster_struct_idx: monster.struct_idx,
-                                                        part_idx: part.part_idx,
-                                                        hzv_idx: part.hzv_idx,
-                                                        column: HzvColumn::from_repr(i).unwrap(),
+                                                        id: HighlightID {
+                                                            monster_struct_idx: monster.struct_idx,
+                                                            part_idx: part.part_idx,
+                                                            hzv_idx: part.hzv_idx,
+                                                            column: HzvColumn::from_repr(i)
+                                                                .unwrap(),
+                                                        },
                                                         triggered: now,
                                                     });
                                                 }

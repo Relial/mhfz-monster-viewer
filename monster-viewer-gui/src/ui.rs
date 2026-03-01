@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     collections::HashSet,
     fmt::Display,
     sync::mpsc::{self, Receiver},
@@ -59,7 +60,7 @@ const PANEL_FRAME: Frame = Frame {
     shadow: Shadow::NONE,
 };
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, FromRepr)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, FromRepr)]
 pub enum HzvColumn {
     Part,
     Hzv,
@@ -103,13 +104,18 @@ pub struct Settings {
     highlight_changes: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq)]
 pub struct Highlight {
+    pub id: HighlightID,
+    pub triggered: Instant,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct HighlightID {
     pub monster_struct_idx: u16,
     pub part_idx: u16,
     pub hzv_idx: u16,
     pub column: HzvColumn,
-    pub triggered: Instant,
 }
 
 #[derive(Serialize)]
@@ -125,7 +131,7 @@ pub struct Viewer {
     columns: [TableColumn; 13],
     labels: Labels,
     #[serde(skip)]
-    highlights: Vec<Highlight>,
+    highlights: HashSet<Highlight>,
 }
 
 impl eframe::App for Viewer {
@@ -207,7 +213,7 @@ impl Viewer {
             hit_log: CircularBuffer::new(),
             columns,
             labels,
-            highlights: Vec::new(),
+            highlights: HashSet::new(),
         };
         thread::spawn(|| {
             handle_game_connection(ctx, ipc_tx);
@@ -259,12 +265,14 @@ impl Viewer {
     }
 
     fn receive_data(&mut self) {
-        while let Ok((monster_data, mut highlights)) = self.ipc_rx.try_recv() {
+        while let Ok((monster_data, highlights)) = self.ipc_rx.try_recv() {
             match monster_data {
                 MonsterData::Monsters(monsters) => {
                     self.monsters = monsters;
                     if self.settings.highlight_changes {
-                        self.highlights.append(&mut highlights);
+                        for new in highlights {
+                            self.highlights.replace(new);
+                        }
                     }
                 }
                 MonsterData::DamageInstance(damage_instance) => {
@@ -292,10 +300,10 @@ impl Viewer {
 
     fn damage_history(&self, ui: &mut egui::Ui) {
         egui::CollapsingHeader::new("Damaged HZV history").show(ui, |ui| {
-            ui.set_max_height(200.);
             TableBuilder::new(ui)
                 .striped(true)
                 .cell_layout(Layout::centered_and_justified(egui::Direction::TopDown))
+                .max_scroll_height(200.)
                 .columns(Column::auto(), 6)
                 .header(18., |mut header| {
                     header.col(|ui| {
@@ -335,11 +343,11 @@ impl Viewer {
                         row.col(|ui| {
                             ui.label(hit.hitzone.vec1.to_string());
                         });
-                        if hit.hitzone.second_vector_indicator == 1 {
-                            row.col(|ui| {
+                        row.col(|ui| {
+                            if hit.hitzone.second_vector_indicator == 1 {
                                 ui.label(hit.hitzone.vec2.to_string());
-                            });
-                        }
+                            }
+                        });
                     });
                 });
         });
@@ -406,7 +414,10 @@ impl Viewer {
                                 ui.with_layout(
                                     Layout::centered_and_justified(egui::Direction::TopDown),
                                     |ui| {
-                                        ui.colored_label(column.color, column.kind.to_string());
+                                        let resp = ui.colored_label(column.color, column.kind.to_string());
+                                        if column.kind == HzvColumn::Count {
+                                            resp.on_hover_text("Amount of hitspheres of various sizes for each part/hzv combination");
+                                        }
                                     },
                                 );
                             });
@@ -418,20 +429,14 @@ impl Viewer {
                             body.row(18.0, |mut row| {
                                 for column in &enabled_columns {
                                     row.col(|ui| {
-                                        if let Some((highlight_i, _)) =
-                                            self.highlights.iter().enumerate().rev().find(
-                                                |(_, h)| {
-                                                    h.monster_struct_idx == monster.struct_idx
-                                                        && h.part_idx == part.part_idx
-                                                        && h.hzv_idx == part.hzv_idx
-                                                        && h.column == column.kind
-                                                },
-                                            )
-                                        {
-                                            let highlight = self.highlights[highlight_i];
-                                            if !paint_highlight(ui, highlight.triggered) {
-                                                self.highlights.swap_remove(highlight_i);
-                                            }
+                                        let highlight_id = HighlightID {
+                                            monster_struct_idx: monster.struct_idx,
+                                            part_idx: part.part_idx,
+                                            hzv_idx: part.hzv_idx,
+                                            column: column.kind,
+                                        };
+                                        if let Some(highlight) = self.highlights.get(&highlight_id) && !paint_highlight(ui, highlight.triggered) {
+                                            self.highlights.remove(&highlight_id);
                                         }
                                         match &column.kind {
                                             HzvColumn::Part => {
@@ -704,5 +709,23 @@ impl Display for HzvColumn {
             HzvColumn::Stun => "Stun",
         };
         write!(f, "{s}")
+    }
+}
+
+impl PartialEq for Highlight {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl std::hash::Hash for Highlight {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
+impl Borrow<HighlightID> for Highlight {
+    fn borrow(&self) -> &HighlightID {
+        &self.id
     }
 }
