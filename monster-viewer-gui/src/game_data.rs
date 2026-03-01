@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use glam::Vec3;
 use serde::Deserialize;
 
@@ -21,12 +23,6 @@ pub struct MonsterPart {
     pub part_health: i16,
     pub hzvs: HitzoneValues,
     pub hitzone_count: usize,
-    pub changed: bool,
-}
-
-pub struct MonsterWithChanges {
-    pub monster: Monster,
-    pub changes: Vec<[bool; 9]>,
 }
 
 impl MonsterPart {
@@ -45,6 +41,54 @@ impl MonsterPart {
             HzvColumn::Thunder => self.hzvs.thunder.to_string(),
             HzvColumn::Dragon => self.hzvs.dragon.to_string(),
             HzvColumn::Stun => self.hzvs.stun.to_string(),
+        }
+    }
+
+    pub fn get_changes(&self, other: &Self) -> Option<[bool; 13]> {
+        if self.part_idx != other.part_idx {
+            return Some([true; 13]);
+        }
+        let mut changes = [false; 13];
+        if self.hzv_idx != other.hzv_idx {
+            changes[1] = true;
+        }
+        if self.hitzone_count != other.hitzone_count {
+            changes[2] = true;
+        }
+        if self.part_health != other.part_health {
+            changes[3] = true;
+        }
+        if self.hzvs.cut != other.hzvs.cut {
+            changes[4] = true;
+        }
+        if self.hzvs.impact != other.hzvs.impact {
+            changes[5] = true;
+        }
+        if self.hzvs.shot != other.hzvs.shot {
+            changes[6] = true;
+        }
+        if self.hzvs.fire != other.hzvs.fire {
+            changes[7] = true;
+        }
+        if self.hzvs.water != other.hzvs.water {
+            changes[8] = true;
+        }
+        if self.hzvs.ice != other.hzvs.ice {
+            changes[9] = true;
+        }
+        if self.hzvs.thunder != other.hzvs.thunder {
+            changes[10] = true;
+        }
+        if self.hzvs.dragon != other.hzvs.dragon {
+            changes[11] = true;
+        }
+        if self.hzvs.stun != other.hzvs.stun {
+            changes[12] = true;
+        }
+        if changes.iter().all(|c| !c) {
+            None
+        } else {
+            Some(changes)
         }
     }
 }

@@ -8,7 +8,7 @@ use std::{
         mpsc::Sender,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Result, anyhow};
@@ -17,7 +17,10 @@ use egui::Context;
 use serde::Deserialize;
 use tracing::info;
 
-use crate::game_data::{DamageInstance, Monster};
+use crate::{
+    game_data::{DamageInstance, Monster},
+    ui::{Highlight, HzvColumn},
+};
 
 #[derive(Deserialize)]
 pub enum MonsterData {
@@ -39,7 +42,7 @@ impl GameConnection {
     }
 }
 
-pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, bool)>) {
+pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, Vec<Highlight>)>) {
     loop {
         if let Ok(mut connection) = GameConnection::new() {
             let mut previous_monsters: Vec<Monster> = Vec::new();
@@ -47,9 +50,10 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, bool
                 postcard::from_io::<MonsterData, _>((&mut connection.stream, &mut connection.buf))
             {
                 let mut send_to_ui = false;
-                let mut changed = false;
+                let mut highlights = Vec::new();
                 match &mut monster_data {
                     MonsterData::Monsters(monsters) => {
+                        let now = Instant::now();
                         for (monster_i, monster) in monsters.iter_mut().enumerate() {
                             if let Some(prev) = previous_monsters.get(monster_i)
                                 && *prev == *monster
@@ -62,13 +66,22 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, bool
                                     send_to_ui = true;
                                 }
                                 for (part_i, part) in monster.parts.iter_mut().enumerate() {
-                                    if let Some(prev_part) = prev.parts.get(part_i)
-                                        && *prev_part == *part
-                                    {
-                                        continue;
+                                    if let Some(prev_part) = prev.parts.get(part_i) {
+                                        if let Some(changes) = part.get_changes(prev_part) {
+                                            for (i, change) in changes.iter().enumerate() {
+                                                if *change {
+                                                    highlights.push(Highlight {
+                                                        monster_struct_idx: monster.struct_idx,
+                                                        part_idx: part.part_idx,
+                                                        hzv_idx: part.hzv_idx,
+                                                        column: HzvColumn::from_repr(i).unwrap(),
+                                                        triggered: now,
+                                                    });
+                                                }
+                                            }
+                                            send_to_ui = true;
+                                        }
                                     } else {
-                                        part.changed = true;
-                                        changed = true;
                                         send_to_ui = true;
                                     }
                                 }
@@ -86,7 +99,7 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, bool
                 }
 
                 if send_to_ui {
-                    if ipc_tx.send((monster_data, changed)).is_err() {
+                    if ipc_tx.send((monster_data, highlights)).is_err() {
                         break;
                     }
                     ui_ctx.request_repaint();

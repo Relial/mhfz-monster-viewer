@@ -1,8 +1,9 @@
 use std::{
+    collections::HashSet,
     fmt::Display,
     sync::mpsc::{self, Receiver},
     thread,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use circular_buffer::CircularBuffer;
@@ -14,6 +15,7 @@ use egui::{
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
 use serde::{Deserialize, Serialize};
+use strum::FromRepr;
 use tracing::info;
 
 use crate::{
@@ -45,7 +47,8 @@ pub const TABLE_COLUMNS: [TableColumn; 13] = [
     TableColumn::new(HzvColumn::Stun, Color32::GRAY, 30.0),
 ];
 
-const CHANGE_HIGHLIGHT_MILLIS: f32 = 2000.;
+const HIGHLIGHT_FADE: Duration = Duration::from_secs(2);
+const HIGHLIGHT_REFRESH: Duration = Duration::from_millis(50);
 
 const PANEL_FRAME: Frame = Frame {
     inner_margin: Margin::same(6),
@@ -56,7 +59,7 @@ const PANEL_FRAME: Frame = Frame {
     shadow: Shadow::NONE,
 };
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, FromRepr)]
 pub enum HzvColumn {
     Part,
     Hzv,
@@ -100,22 +103,29 @@ pub struct Settings {
     highlight_changes: bool,
 }
 
+#[derive(Clone, Copy)]
+pub struct Highlight {
+    pub monster_struct_idx: u16,
+    pub part_idx: u16,
+    pub hzv_idx: u16,
+    pub column: HzvColumn,
+    pub triggered: Instant,
+}
+
 #[derive(Serialize)]
 #[serde(rename(serialize = "Saved"))]
 pub struct Viewer {
     settings: Settings,
     #[serde(skip)]
-    ipc_rx: Receiver<(MonsterData, bool)>,
+    ipc_rx: Receiver<(MonsterData, Vec<Highlight>)>,
     #[serde(skip)]
     monsters: Vec<Monster>,
-    #[serde(skip)]
-    last_change: Option<Instant>,
     #[serde(skip)]
     hit_log: CircularBuffer<1000, DamageInstance>,
     columns: [TableColumn; 13],
     labels: Labels,
     #[serde(skip)]
-    highlight_color: Color32,
+    highlights: Vec<Highlight>,
 }
 
 impl eframe::App for Viewer {
@@ -155,10 +165,10 @@ impl eframe::App for Viewer {
                             .show(ui, |ui| {
                                 ui.take_available_width();
                                 self.receive_data();
-                                self.handle_highlights(ui, ctx);
+                                // self.handle_highlights(ui, ctx);
                                 self.filter_columns(ui);
                                 self.damage_history(ui);
-                                self.monster_viewer(ui);
+                                self.monster_viewer(ui, ctx);
                             });
                     });
                 let window_rect = ctx.viewport_rect().shrink(1.);
@@ -194,11 +204,10 @@ impl Viewer {
             settings,
             ipc_rx,
             monsters: Vec::new(),
-            last_change: None,
             hit_log: CircularBuffer::new(),
             columns,
             labels,
-            highlight_color: Color32::TRANSPARENT,
+            highlights: Vec::new(),
         };
         thread::spawn(|| {
             handle_game_connection(ctx, ipc_tx);
@@ -250,50 +259,18 @@ impl Viewer {
     }
 
     fn receive_data(&mut self) {
-        while let Ok((monster_data, changed)) = self.ipc_rx.try_recv() {
+        while let Ok((monster_data, mut highlights)) = self.ipc_rx.try_recv() {
             match monster_data {
-                MonsterData::Monsters(mut monsters) => {
-                    if self.settings.highlight_changes && changed {
-                        self.last_change = Some(Instant::now());
-                    }
-                    if !changed {
-                        for (prev, new) in self.monsters.iter().zip(&mut monsters) {
-                            for (prev_part, new_part) in prev.parts.iter().zip(&mut new.parts) {
-                                if prev_part.changed {
-                                    new_part.changed = true;
-                                }
-                            }
-                        }
-                    }
+                MonsterData::Monsters(monsters) => {
                     self.monsters = monsters;
+                    if self.settings.highlight_changes {
+                        self.highlights.append(&mut highlights);
+                    }
                 }
                 MonsterData::DamageInstance(damage_instance) => {
                     self.hit_log.push_front(damage_instance);
                 }
             }
-        }
-    }
-
-    fn handle_highlights(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        if let Some(last) = self.last_change {
-            // const SELECTED_STROKE_COLOR: Color32 = Color32::from_rgb(192, 222, 255);
-            // const UNSELECTED_STROKE_COLOR: Color32 = Color32::GRAY;
-            let t = last.elapsed().as_millis() as f32 / CHANGE_HIGHLIGHT_MILLIS;
-            if t >= 1.0 {
-                self.last_change = None;
-                // let visuals = ui.visuals_mut();
-                // visuals.selection.bg_fill = Color32::TRANSPARENT;
-                // visuals.selection.stroke.color = UNSELECTED_STROKE_COLOR;
-                self.highlight_color = Color32::TRANSPARENT;
-            } else {
-                let bg_alpha = ((1. - t) * 255.).round().clamp(0., 255.) as u8;
-                self.highlight_color = Color32::from_rgba_unmultiplied(0, 92, 128, bg_alpha);
-                // let stroke_color = SELECTED_STROKE_COLOR.lerp_to_gamma(UNSELECTED_STROKE_COLOR, t);
-                // let visuals = ui.visuals_mut();
-                // visuals.selection.bg_fill = Color32::from_rgba_unmultiplied(0, 92, 128, bg_alpha);
-                // visuals.selection.stroke.color = stroke_color;
-            }
-            ctx.request_repaint();
         }
     }
 
@@ -368,17 +345,23 @@ impl Viewer {
         });
     }
 
-    fn monster_viewer(&mut self, ui: &mut egui::Ui) {
+    fn monster_viewer(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let mut damaged_rect = None;
         let enabled_columns: Vec<&TableColumn> =
             self.columns.iter().filter(|col| col.enabled).collect();
         let mut widest_part: f32 = 0.0;
         let mut widest_hzv: f32 = 0.0;
-        let item_spacing = ui.spacing().item_spacing;
-        let paint_highlight = |ui: &mut egui::Ui| {
-            let gapless_rect = ui.max_rect().expand2(0.5 * item_spacing);
-            ui.painter()
-                .rect_filled(gapless_rect, 0.0, self.highlight_color)
+        let paint_highlight = |ui: &mut egui::Ui, triggered: Instant| -> bool {
+            let t = triggered.elapsed().div_duration_f64(HIGHLIGHT_FADE);
+            if t > 1.0 {
+                return false;
+            }
+            let bg_alpha = ((1. - t) * 255.).round().clamp(0., 255.) as u8;
+            let highlight_color = Color32::from_rgba_unmultiplied(0, 92, 128, bg_alpha);
+            let rect = ui.max_rect();
+            ui.painter().rect_filled(rect, 0.0, highlight_color);
+            ctx.request_repaint_after(HIGHLIGHT_REFRESH);
+            true
         };
         for (i, monster) in self.monsters.iter().enumerate() {
             egui::CollapsingHeader::new(format!(
@@ -409,10 +392,7 @@ impl Viewer {
                 if monster.parts.is_empty() {
                     return;
                 }
-                let mut builder = TableBuilder::new(ui)
-                    .striped(true)
-                    // .cell_layout(Layout::top_down(Align::Center))
-                    .max_scroll_height(1440.);
+                let mut builder = TableBuilder::new(ui).striped(true).max_scroll_height(1440.);
 
                 // All the auto sizing options cause row interact rects to span
                 // 2 rows for some reason so this is the workaround
@@ -436,15 +416,22 @@ impl Viewer {
                         let last_hit = self.hit_log.front();
                         for part in &monster.parts {
                             body.row(18.0, |mut row| {
-                                let mut highlight = false;
-                                if part.changed {
-                                    highlight = true;
-                                    // row.set_selected(true);
-                                }
                                 for column in &enabled_columns {
                                     row.col(|ui| {
-                                        if highlight {
-                                            paint_highlight(ui);
+                                        if let Some((highlight_i, _)) =
+                                            self.highlights.iter().enumerate().rev().find(
+                                                |(_, h)| {
+                                                    h.monster_struct_idx == monster.struct_idx
+                                                        && h.part_idx == part.part_idx
+                                                        && h.hzv_idx == part.hzv_idx
+                                                        && h.column == column.kind
+                                                },
+                                            )
+                                        {
+                                            let highlight = self.highlights[highlight_i];
+                                            if !paint_highlight(ui, highlight.triggered) {
+                                                self.highlights.swap_remove(highlight_i);
+                                            }
                                         }
                                         match &column.kind {
                                             HzvColumn::Part => {

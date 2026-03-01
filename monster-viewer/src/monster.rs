@@ -53,7 +53,6 @@ impl Monster {
                                 part_health,
                                 hzvs,
                                 hitzone_count: 1 + info.second_vector_indicator as usize,
-                                changed: false,
                             });
                         }
                     }
@@ -91,7 +90,6 @@ pub struct MonsterPart {
     pub part_health: i16,
     pub hzvs: HitzoneValues,
     pub hitzone_count: usize,
-    pub changed: bool,
 }
 
 impl MonsterStruct {
