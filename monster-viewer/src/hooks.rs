@@ -1,5 +1,3 @@
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
 use std::sync::mpsc::Sender;
 
 use anyhow::{Result, anyhow};
@@ -11,12 +9,7 @@ use crate::MonsterData;
 use crate::hzv::HitzoneInfo;
 use crate::monster::DamageInstance;
 use crate::monster::MonsterStruct;
-use crate::{
-    address::Addresses,
-    hzv::{get_hzv_info, get_hzvs},
-    input::{Input, Key},
-    monster::{Monster, MonsterPart},
-};
+use crate::{address::Addresses, monster::Monster};
 
 fn hook_quest_func<'a>(
     addresses: Addresses,

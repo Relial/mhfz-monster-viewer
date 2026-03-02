@@ -21,7 +21,6 @@ use windows::Win32::{
 mod address;
 mod hooks;
 mod hzv;
-mod input;
 mod monster;
 use address::MHFOInfo;
 

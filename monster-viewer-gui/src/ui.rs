@@ -9,9 +9,9 @@ use std::{
 
 use circular_buffer::CircularBuffer;
 use egui::{
-    self, Align, Button, Color32, CornerRadius, CursorIcon, Frame, Layout, Margin, Modifiers,
-    Painter, Pos2, Rect, ResizeDirection, RichText, Sense, Shadow, Stroke, TextWrapMode, Vec2,
-    ViewportCommand, WindowLevel, scroll_area::ScrollSource, vec2,
+    self, Align, Button, Color32, CornerRadius, CursorIcon, Frame, Layout, Margin, Pos2, Rect,
+    ResizeDirection, RichText, Sense, Shadow, Stroke, Vec2, ViewportCommand, WindowLevel,
+    scroll_area::ScrollSource, vec2,
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
@@ -23,7 +23,7 @@ use crate::{
     game_data::{DamageInstance, Monster, monster_name},
     ipc::{MonsterData, handle_game_connection},
     label::Labels,
-    save::{load_settings, save_settings},
+    save::save_settings,
 };
 
 const FIRE: Color32 = Color32::from_rgb(255, 72, 2);
@@ -81,7 +81,8 @@ pub enum HzvColumn {
 pub struct TableColumn {
     kind: HzvColumn,
     enabled: bool,
-    color: Color32,
+    #[serde(skip)]
+    pub color: Color32,
     #[serde(skip)]
     pub width: f32,
 }
@@ -99,9 +100,9 @@ impl TableColumn {
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub struct Settings {
-    always_on_top: bool,
-    background_opacity: u8,
-    highlight_changes: bool,
+    pub always_on_top: bool,
+    pub background_opacity: u8,
+    pub highlight_changes: bool,
 }
 
 #[derive(Clone, Copy, Eq)]
@@ -118,19 +119,13 @@ pub struct HighlightID {
     pub column: HzvColumn,
 }
 
-#[derive(Serialize)]
-#[serde(rename(serialize = "Saved"))]
 pub struct Viewer {
-    settings: Settings,
-    #[serde(skip)]
+    pub settings: Settings,
     ipc_rx: Receiver<(MonsterData, Vec<Highlight>)>,
-    #[serde(skip)]
     monsters: Vec<Monster>,
-    #[serde(skip)]
     hit_log: CircularBuffer<1000, DamageInstance>,
-    columns: [TableColumn; 13],
-    labels: Labels,
-    #[serde(skip)]
+    pub columns: [TableColumn; 13],
+    pub labels: Labels,
     highlights: HashSet<Highlight>,
 }
 
@@ -181,9 +176,22 @@ impl eframe::App for Viewer {
                 handle_window_resize(ui, ctx, window_rect);
             });
 
-        if ctx.input(|i| i.viewport().close_requested()) {
-            let _ = save_settings(self);
-        }
+        ctx.input(|i| {
+            let viewport_info = i.viewport();
+            if viewport_info.close_requested() {
+                let (size, pos) = {
+                    if let Some(rect) = viewport_info.outer_rect {
+                        (
+                            Some(Vec2::new(rect.max.x - rect.min.x, rect.max.y - rect.min.y)),
+                            Some(Pos2::new(rect.min.x, rect.min.y)),
+                        )
+                    } else {
+                        (None, None)
+                    }
+                };
+                let _ = save_settings(self, size, pos);
+            }
+        });
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -192,20 +200,13 @@ impl eframe::App for Viewer {
 }
 
 impl Viewer {
-    pub fn new(ctx: egui::Context) -> Self {
+    pub fn new(
+        ctx: egui::Context,
+        settings: Settings,
+        labels: Labels,
+        columns: [TableColumn; 13],
+    ) -> Self {
         let (ipc_tx, ipc_rx) = mpsc::channel();
-        let (settings, labels, columns) = if let Some(mut saved) = load_settings() {
-            saved.default_widths();
-            (saved.settings, saved.labels, saved.columns)
-        } else {
-            let settings = Settings {
-                always_on_top: true,
-                background_opacity: 204,
-                highlight_changes: true,
-            };
-            let labels = Labels::default();
-            (settings, labels, TABLE_COLUMNS)
-        };
         let viewer = Self {
             settings,
             ipc_rx,
@@ -452,8 +453,9 @@ impl Viewer {
                                                                 .horizontal_align(Align::Center)
                                                                 .clip_text(false)
                                                                 .desired_width(30.0)
+                                                                .margin(Margin::symmetric(8, 2))
                                                                 .show(ui)
-                                                                .response;
+                                                                .response.on_hover_text(part.part_idx.to_string());
                                                         widest_part = (resp.rect.max.x
                                                             - resp.rect.min.x)
                                                             .max(widest_part);
@@ -478,8 +480,9 @@ impl Viewer {
                                                                 .horizontal_align(Align::Center)
                                                                 .clip_text(false)
                                                                 .desired_width(30.0)
+                                                                .margin(Margin::symmetric(8, 2))
                                                                 .show(ui)
-                                                                .response;
+                                                                .response.on_hover_text(part.hzv_idx.to_string());
                                                         widest_hzv = (resp.rect.max.x
                                                             - resp.rect.min.x)
                                                             .max(widest_hzv);

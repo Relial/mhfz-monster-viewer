@@ -2,11 +2,7 @@ use std::{
     env::current_exe,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::PathBuf,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc::Sender,
-    },
+    sync::mpsc::Sender,
     thread,
     time::{Duration, Instant},
 };

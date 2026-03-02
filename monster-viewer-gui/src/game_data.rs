@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use glam::Vec3;
 use serde::Deserialize;
 
