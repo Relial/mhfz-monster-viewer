@@ -7,7 +7,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
 use circular_buffer::CircularBuffer;
 use egui::{
     self, Align, Button, Color32, CornerRadius, CursorIcon, Frame, Layout, Margin, Pos2, Rect,
@@ -18,7 +17,6 @@ use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
 use serde::{Deserialize, Serialize};
 use strum::FromRepr;
-use tracing::info;
 
 use crate::{
     game_data::{DamageInstance, Monster, monster_name},
@@ -167,7 +165,6 @@ impl eframe::App for Viewer {
                             .show(ui, |ui| {
                                 ui.take_available_space();
                                 self.receive_data();
-                                // self.handle_highlights(ui, ctx);
                                 self.filter_columns(ui);
                                 self.damage_history(ui);
                                 self.monster_viewer(ui, ctx);

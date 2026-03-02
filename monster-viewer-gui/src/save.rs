@@ -5,7 +5,6 @@ use std::{
 };
 
 use anyhow::{Result, anyhow};
-use egui::{Pos2, Vec2};
 use serde::{Deserialize, Serialize};
 
 use crate::{

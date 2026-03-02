@@ -2,7 +2,6 @@ use std::arch::asm;
 
 use glam::Vec3;
 use serde::Serialize;
-use tracing::info;
 
 use crate::{address::Addresses, monster::MonsterStruct};
 
@@ -28,7 +27,7 @@ impl HitzoneInfo {
             && self.flags[1] & 0x4 == 0
             && (check1 != 0 || self.flags[0] & 0x4 == 0)
             && self.flags[1] & 0x12 == 0
-        // || check2 == 0 relevant if some variable is a specific value, seems to be tied to the attack you use but can't figure it out
+        // || check2 == 0 relevant if some variable is a specific value, seems to be tied to the attack you use but idk
         {
             HitzoneValidity::Valid
         } else {

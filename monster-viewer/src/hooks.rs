@@ -3,7 +3,6 @@ use std::sync::mpsc::Sender;
 use anyhow::{Result, anyhow};
 use ilhook::x86::CallbackOption;
 use ilhook::x86::{ClosureHookPoint, HookFlags, Registers, hook_closure_jmp_back};
-use tracing::info;
 
 use crate::MonsterData;
 use crate::hzv::HitzoneInfo;
