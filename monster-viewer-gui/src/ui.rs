@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::Result;
 use circular_buffer::CircularBuffer;
 use egui::{
     self, Align, Button, Color32, CornerRadius, CursorIcon, Frame, Layout, Margin, Pos2, Rect,
@@ -164,7 +165,7 @@ impl eframe::App for Viewer {
                                 mouse_wheel: true,
                             })
                             .show(ui, |ui| {
-                                ui.take_available_width();
+                                ui.take_available_space();
                                 self.receive_data();
                                 // self.handle_highlights(ui, ctx);
                                 self.filter_columns(ui);
@@ -176,22 +177,9 @@ impl eframe::App for Viewer {
                 handle_window_resize(ui, ctx, window_rect);
             });
 
-        ctx.input(|i| {
-            let viewport_info = i.viewport();
-            if viewport_info.close_requested() {
-                let (size, pos) = {
-                    if let Some(rect) = viewport_info.outer_rect {
-                        (
-                            Some(Vec2::new(rect.max.x - rect.min.x, rect.max.y - rect.min.y)),
-                            Some(Pos2::new(rect.min.x, rect.min.y)),
-                        )
-                    } else {
-                        (None, None)
-                    }
-                };
-                let _ = save_settings(self, size, pos);
-            }
-        });
+        if ctx.input(|i| i.viewport().close_requested()) {
+            let _ = save_settings(self);
+        }
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
@@ -223,44 +211,42 @@ impl Viewer {
     }
 
     fn controls(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            ui.visuals_mut().button_frame = false;
             ui.add_space(8.);
-            ui.label("Background opacity: ");
-            ui.add_sized(
-                [20., 20.],
-                egui::DragValue::new(&mut self.settings.background_opacity)
-                    .custom_formatter(|n, _| {
-                        let actual = (n / 255. * 100.).round().clamp(0., 100.) as usize;
-                        actual.to_string()
-                    })
-                    .custom_parser(|s| {
-                        let n: f64 = s.parse().ok()?;
-                        let actual = (n / 100. * 255.).round().clamp(0., 255.);
-                        Some(actual)
-                    })
-                    .range(0..=255),
-            );
-            let on_top_resp = ui.checkbox(&mut self.settings.always_on_top, "Always on top");
-            if on_top_resp.clicked() {
-                let level = if self.settings.always_on_top {
-                    WindowLevel::AlwaysOnTop
-                } else {
-                    WindowLevel::Normal
-                };
-                ctx.send_viewport_cmd(ViewportCommand::WindowLevel(level));
+            let button_height = Vec2::splat(20.);
+            let close_resp = ui.add(Button::new("❌").min_size(button_height));
+            if close_resp.clicked() {
+                ctx.send_viewport_cmd(ViewportCommand::Close);
             }
-            ui.checkbox(&mut self.settings.highlight_changes, "Highlight changes");
 
-            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                ui.visuals_mut().button_frame = false;
-                ui.add_space(8.);
-                let button_height = Vec2::splat(20.);
-                let close_resp = ui
-                    .add(Button::new("❌").min_size(button_height))
-                    .on_hover_text("Close window and unload");
-                if close_resp.clicked() {
-                    ctx.send_viewport_cmd(ViewportCommand::Close);
+            ui.visuals_mut().button_frame = true;
+            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+                ui.label("Background opacity: ");
+                ui.add_sized(
+                    [20., 20.],
+                    egui::DragValue::new(&mut self.settings.background_opacity)
+                        .custom_formatter(|n, _| {
+                            let actual = (n / 255. * 100.).round().clamp(0., 100.) as usize;
+                            actual.to_string()
+                        })
+                        .custom_parser(|s| {
+                            let n: f64 = s.parse().ok()?;
+                            let actual = (n / 100. * 255.).round().clamp(0., 255.);
+                            Some(actual)
+                        })
+                        .range(0..=255),
+                );
+                let on_top_resp = ui.checkbox(&mut self.settings.always_on_top, "Always on top");
+                if on_top_resp.clicked() {
+                    let level = if self.settings.always_on_top {
+                        WindowLevel::AlwaysOnTop
+                    } else {
+                        WindowLevel::Normal
+                    };
+                    ctx.send_viewport_cmd(ViewportCommand::WindowLevel(level));
                 }
+                ui.checkbox(&mut self.settings.highlight_changes, "Highlight changes");
             });
         });
     }
@@ -320,10 +306,10 @@ impl Viewer {
                         ui.label("Scale");
                     });
                     header.col(|ui| {
-                        ui.label("Position 1");
+                        ui.label("Vector 1");
                     });
                     header.col(|ui| {
-                        ui.label("Position 2");
+                        ui.label("Vector 2");
                     });
                 })
                 .body(|body| {
@@ -401,7 +387,7 @@ impl Viewer {
                 if monster.parts.is_empty() {
                     return;
                 }
-                let mut builder = TableBuilder::new(ui).striped(true).max_scroll_height(1440.);
+                let mut builder = TableBuilder::new(ui).striped(true).vscroll(false);
 
                 // All the auto sizing options cause row interact rects to span
                 // 2 rows for some reason so this is the workaround

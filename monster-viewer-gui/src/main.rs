@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::env::current_exe;
+
 use anyhow::{Result, anyhow};
 use egui::{self, Pos2, Vec2};
 use mimalloc::MiMalloc;
@@ -24,34 +26,35 @@ use crate::{
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
-    let (settings, labels, columns, window_size, window_pos) =
-        if let Ok((mut saved_settings, labels)) = load_settings() {
-            saved_settings.default_column_widths_colors();
-            (
-                saved_settings.settings,
-                labels,
-                saved_settings.columns,
-                saved_settings.window_size.unwrap_or(DEFAULT_SIZE),
-                saved_settings.window_pos.unwrap_or(DEFAULT_POS),
-            )
-        } else {
-            let settings = Settings {
-                always_on_top: true,
-                background_opacity: 204,
-                highlight_changes: true,
-            };
-            let labels = Labels::default();
-            (settings, labels, TABLE_COLUMNS, DEFAULT_SIZE, DEFAULT_POS)
+
+    // eframe has the window position but every method returns 0, 0 instead so need this crap so cool
+    // could use win32 but nothing else strictly depends on windows so no thanks
+    let persistence_path = current_exe()?
+        .parent()
+        .ok_or(anyhow!("Couldn't get executable directory"))?
+        .join("window.ron");
+    let (settings, labels, columns) = if let Ok((mut saved_settings, labels)) = load_settings() {
+        saved_settings.default_column_widths_colors();
+        (saved_settings.settings, labels, saved_settings.columns)
+    } else {
+        let settings = Settings {
+            always_on_top: true,
+            background_opacity: 204,
+            highlight_changes: true,
         };
+        let labels = Labels::default();
+        (settings, labels, TABLE_COLUMNS)
+    };
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
-            .with_inner_size(window_size)
+            .with_inner_size(DEFAULT_SIZE)
             .with_always_on_top()
-            .with_position(window_pos)
+            .with_position(DEFAULT_POS)
             .with_resizable(true)
             .with_decorations(false)
             .with_transparent(true)
             .with_icon(egui::viewport::IconData::default()),
+        persistence_path: Some(persistence_path),
         ..Default::default()
     };
     eframe::run_native(

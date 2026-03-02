@@ -21,8 +21,6 @@ const LABELS_FILENAME: &str = "labels.json";
 pub struct SavedSettings {
     pub settings: ui::Settings,
     pub columns: [TableColumn; 13],
-    pub window_size: Option<Vec2>,
-    pub window_pos: Option<Pos2>,
 }
 
 impl SavedSettings {
@@ -52,14 +50,10 @@ pub fn load_settings() -> Result<(SavedSettings, Labels)> {
 
 pub fn save_settings(
     viewer: &Viewer,
-    window_size: Option<Vec2>,
-    window_pos: Option<Pos2>,
 ) -> Result<()> {
     let settings = SavedSettings {
         settings: viewer.settings,
         columns: viewer.columns,
-        window_size,
-        window_pos,
     };
     let exe_path = current_exe()?;
     let exe_dir = exe_path
@@ -71,7 +65,7 @@ pub fn save_settings(
     let labels_file = File::create(labels_path)?;
     let settings_writer = BufWriter::new(settings_file);
     let labels_writer = BufWriter::new(labels_file);
-    serde_json::to_writer(settings_writer, &settings)?;
+    serde_json::to_writer_pretty(settings_writer, &settings)?;
     serde_json::to_writer(labels_writer, &viewer.labels)?;
     Ok(())
 }
