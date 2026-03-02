@@ -368,9 +368,9 @@ impl Viewer {
                     return;
                 };
                 let effective_current =
-                    (monster.current_health as f32 / monster.defense_multi).round() as u32;
+                    (monster.current_health as f32 / monster.defense_multi).round() as u64;
                 let effective_max =
-                    (monster.max_health as f32 / monster.defense_multi).round() as u32;
+                    (monster.max_health as f32 / monster.defense_multi).round() as u64;
                 ui.label(format!(
                     "Health: {}/{} (effective {}/{})",
                     monster.current_health.to_formatted_string(&Locale::en),
