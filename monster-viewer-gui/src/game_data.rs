@@ -95,9 +95,9 @@ impl MonsterPart {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
 pub struct HitzoneValues {
     _unk: u8,
-    pub cut: i8,
-    pub impact: i8,
-    pub shot: i8,
+    pub cut: u8,
+    pub impact: u8,
+    pub shot: u8,
     pub fire: i8,
     pub water: i8,
     pub ice: i8,
