@@ -177,7 +177,7 @@ pub fn monster_name(id: u8) -> &'static str {
         0x20 => "Poogie",
         0x21 => "Kirin",
         0x22 => "Cephalos",
-        0x23 => "Giaprey/Giadrome",
+        0x23 => "Giaprey",
         0x24 => "Crimson Fatalis",
         0x25 => "Pink Rathian",
         0x26 => "Blue Yian Kut-Ku",
