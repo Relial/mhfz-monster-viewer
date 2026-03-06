@@ -2024,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "monster-viewer"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "glam",
@@ -2039,7 +2039,7 @@ dependencies = [
 
 [[package]]
 name = "monster-viewer-gui"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "arc-swap",

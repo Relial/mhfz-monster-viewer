@@ -151,7 +151,7 @@ impl MonsterStruct {
     }
 
     pub fn hitzone_check_3(&self) -> u16 {
-        unsafe { (self.0.wrapping_byte_add(0x5BC) as *const u16).read() }
+        unsafe { (self.0.wrapping_byte_add(0xB5C) as *const u16).read() }
     }
 }
 
