@@ -27,14 +27,15 @@ impl Monster {
         let monster_id = monster_struct.monster_id();
         let check1 = monster_struct.hitzone_check_1();
         let check2 = monster_struct.hitzone_check_2();
-        let mut skip = false;
+        let check3 = monster_struct.hitzone_check_3();
+        let mut skip = 0;
         for hzv_info in get_hzv_info(addresses, monster_struct) {
-            if skip {
-                skip = false;
+            if skip > 0 {
+                skip -= 1;
                 continue;
             }
             let info = unsafe { hzv_info.read() };
-            match info.is_real(check1, check2) {
+            match info.is_real(check1, check2, check3) {
                 crate::hzv::HitzoneValidity::Valid => {
                     if let Some(hzvs) = get_hzvs(addresses, hzv_info, monster_struct) {
                         if info.scale == 0. {
@@ -58,8 +59,8 @@ impl Monster {
                     }
                 }
                 crate::hzv::HitzoneValidity::Invalid => continue,
-                crate::hzv::HitzoneValidity::InvalidSkipNext => {
-                    skip = true;
+                crate::hzv::HitzoneValidity::InvalidSkipNextN(n) => {
+                    skip = n;
                     continue;
                 }
             }
@@ -147,6 +148,10 @@ impl MonsterStruct {
 
     pub fn hitzone_check_2(&self) -> u8 {
         unsafe { self.0.wrapping_byte_add(0xAB3).read() }
+    }
+
+    pub fn hitzone_check_3(&self) -> u16 {
+        unsafe { (self.0.wrapping_byte_add(0x5BC) as *const u16).read() }
     }
 }
 

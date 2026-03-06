@@ -19,9 +19,13 @@ pub struct HitzoneInfo {
 }
 
 impl HitzoneInfo {
-    pub fn is_real(&self, check1: u8, _check2: u8) -> HitzoneValidity {
+    pub fn is_real(&self, check1: u8, _check2: u8, check3: u16) -> HitzoneValidity {
         if self.unk0 == 0x7D {
-            HitzoneValidity::InvalidSkipNext
+            if self.second_vector_indicator & check3 == 0 {
+                HitzoneValidity::Invalid
+            } else {
+                HitzoneValidity::InvalidSkipNextN(self.hzv_idx)
+            }
         } else if (check1 != 0 || self.flags[2] & 0x12 == 0)
             && (self.flags[2] & 0x8 == 0 || (check1 != 0 && self.flags[3] & 1 == 0))
             && self.flags[1] & 0x4 == 0
@@ -39,7 +43,7 @@ impl HitzoneInfo {
 pub enum HitzoneValidity {
     Valid,
     Invalid,
-    InvalidSkipNext,
+    InvalidSkipNextN(u16),
 }
 
 #[repr(C)]
