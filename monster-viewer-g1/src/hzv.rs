@@ -93,7 +93,7 @@ pub fn get_hzvs_taikun(
     hzv_info: *const HitzoneInfo,
     monster: MonsterStruct,
 ) -> Option<HitzoneValues> {
-    let get_hzvs_addr = addresses.get_hzvs_func;
+    let get_hzvs_addr = addresses.get_hzvs_taikun_func;
     unsafe {
         let values_addr: u32;
         asm!(
