@@ -1,3 +1,3 @@
 [workspace]
-members = ["monster-viewer-gui", "monster-viewer",]
+members = ["monster-viewer-gui", "monster-viewer", "monster-viewer-g1"]
 resolver = "3"

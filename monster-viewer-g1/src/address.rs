@@ -8,18 +8,13 @@ use windows::core::{PCSTR, s};
 use crate::monster::MonsterStruct;
 
 #[derive(Clone, Copy)]
-pub enum MHFOInfo {
-    LowGrade(Addresses),
-    HighGrade(Addresses),
-}
-
-#[derive(Clone, Copy)]
 pub struct Addresses {
     pub dll: usize,
     pub quest_func: usize,
     pub damage_calc_get_hzv: usize,
     pub get_hzv_info_func: usize,
     pub get_hzvs_func: usize,
+    pub get_hzvs_taikun_func: usize,
     pub encryption1: usize,
     pub encryption2: usize,
     pub encryption3: u16,
@@ -28,25 +23,12 @@ pub struct Addresses {
     player_info: usize,
 }
 
-impl MHFOInfo {
-    pub fn find_main_dll() -> Self {
-        loop {
-            if let Ok(handle) = unsafe { GetModuleHandleA(PCSTR(s!("mhfo.dll").as_ptr())) } {
-                return Self::LowGrade(Addresses::new_lge(handle.0.addr()));
-            } else if let Ok(handle) =
-                unsafe { GetModuleHandleA(PCSTR(s!("mhfo-hd.dll").as_ptr())) }
-            {
-                return Self::HighGrade(Addresses::new_hge(handle.0.addr()));
-            }
-            sleep(Duration::from_millis(100));
+pub fn find_main_dll() -> Addresses {
+    loop {
+        if let Ok(handle) = unsafe { GetModuleHandleA(PCSTR(s!("mhfo.dll").as_ptr())) } {
+            return Addresses::new_lge(handle.0.addr());
         }
-    }
-
-    pub fn addresses(&self) -> Addresses {
-        match self {
-            MHFOInfo::LowGrade(addresses) => *addresses,
-            MHFOInfo::HighGrade(addresses) => *addresses,
-        }
+        sleep(Duration::from_millis(100));
     }
 }
 
@@ -54,32 +36,17 @@ impl Addresses {
     fn new_lge(dll: usize) -> Self {
         Self {
             dll,
-            quest_func: dll + 0x880360,
-            damage_calc_get_hzv: dll + 0x8A0743,
-            get_hzv_info_func: dll + 0x82C1D0,
-            get_hzvs_func: dll + 0x8407D0,
-            encryption1: dll + 0x1A52B5C,
-            encryption2: dll + 0x617CEEE,
-            encryption3: 0xB7A0,
-            player_structs: dll + 0x5033B90,
-            monster_structs: dll + 0x614058C,
-            player_info: dll + 0x5BC830C,
-        }
-    }
-
-    fn new_hge(dll: usize) -> Self {
-        Self {
-            dll,
-            quest_func: dll + 0x89BE10,
-            damage_calc_get_hzv: dll + 0x8BC2A3,
-            get_hzv_info_func: dll + 0x846CA0,
-            get_hzvs_func: dll + 0x85B2D0,
-            encryption1: dll + 0x1A422C4,
-            encryption2: dll + 0xEDB768E,
-            encryption3: 0x5EC0,
-            player_structs: dll + 0xDC6B750,
-            monster_structs: dll + 0xED7AD2C,
-            player_info: dll + 0xE7FFF3C,
+            quest_func: dll + 0x308127,
+            damage_calc_get_hzv: dll + 0x31C2F0,
+            get_hzv_info_func: dll + 0x2D0EC0,
+            get_hzvs_func: dll + 0x2DF750,
+            get_hzvs_taikun_func: dll + 0x591530,
+            encryption1: dll + 0xD871E4,
+            encryption2: dll + 0x5B38DEE,
+            encryption3: 0xDB70,
+            player_structs: dll + 0x4C2FE90,
+            monster_structs: dll + 0x5B0E2AC,
+            player_info: dll + 0x56A9FA8,
         }
     }
 
@@ -94,7 +61,7 @@ impl Addresses {
             Some(
                 (0..40)
                     .flat_map(|i| {
-                        let ptr = structs_ptr.wrapping_byte_add(0xEF0 * i);
+                        let ptr = structs_ptr.wrapping_byte_add(0xD80 * i);
                         if monster_exists(ptr) {
                             Some(MonsterStruct::new(ptr))
                         } else {
@@ -112,7 +79,7 @@ impl Addresses {
         unsafe {
             let ptr = (self.player_info as *const *const u8).read();
             if !ptr.is_null() {
-                let idx = ptr.wrapping_byte_add(0x23F8).read() as usize;
+                let idx = ptr.wrapping_byte_add(0xAF8).read() as usize;
                 Some(idx)
             } else {
                 None
@@ -122,7 +89,7 @@ impl Addresses {
 
     pub fn own_player_addr(&self) -> Option<usize> {
         let idx = self.own_player_idx()?;
-        Some(self.player_structs + (idx * 0x1050))
+        Some(self.player_structs + (idx * 0xF40))
     }
 }
 
