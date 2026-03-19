@@ -283,7 +283,7 @@ impl Viewer {
     }
 
     fn damage_history(&self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Damaged HZV history").show(ui, |ui| {
+        egui::CollapsingHeader::new("Attack history").show(ui, |ui| {
             TableBuilder::new(ui)
                 .striped(true)
                 .cell_layout(Layout::centered_and_justified(egui::Direction::TopDown))
@@ -312,14 +312,23 @@ impl Viewer {
                 .body(|body| {
                     body.rows(18., self.hit_log.len(), |mut row| {
                         let hit = self.hit_log[row.index()];
+                        let Some(labels) = self.labels.monster(hit.monster_id as usize) else {
+                            return;
+                        };
+                        let part = labels.part(hit.hitzone.part_idx as usize);
                         row.col(|ui| {
                             ui.label(monster_name(hit.monster_id));
                         });
                         row.col(|ui| {
-                            ui.label(hit.hitzone.part_idx.to_string());
+                            let label = &part.label;
+                            ui.label(label);
                         });
                         row.col(|ui| {
-                            ui.label(hit.hitzone.hzv_idx.to_string());
+                            if let Some(label) = part.get_hzv(hit.hitzone.hzv_idx as usize) {
+                                ui.label(label);
+                            } else {
+                                ui.label(hit.hitzone.hzv_idx.to_string());
+                            }
                         });
                         row.col(|ui| {
                             ui.label(hit.hitzone.scale.to_string());
@@ -363,7 +372,7 @@ impl Viewer {
             ))
             .default_open(i == 0)
             .show(ui, |ui| {
-                let Some(labels) = self.labels.monster(monster.monster_id as usize) else {
+                let Some(labels) = self.labels.monster_mut(monster.monster_id as usize) else {
                     ui.label("Error: Bad monster ID");
                     return;
                 };
@@ -428,7 +437,7 @@ impl Viewer {
                                                     Layout::top_down(Align::Center),
                                                     |ui| {
                                                         let label = &mut labels
-                                                            .part(part.part_idx as usize)
+                                                            .part_mut(part.part_idx as usize)
                                                             .label;
                                                         let resp =
                                                             egui::TextEdit::singleline(label)
@@ -453,7 +462,7 @@ impl Viewer {
                                                     Layout::top_down(Align::Center),
                                                     |ui| {
                                                         let label = labels
-                                                            .part(part.part_idx as usize)
+                                                            .part_mut(part.part_idx as usize)
                                                             .get_or_insert_hzv(
                                                                 part.hzv_idx as usize,
                                                             );

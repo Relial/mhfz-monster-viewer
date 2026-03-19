@@ -19,15 +19,22 @@ pub struct HzvLabel {
 }
 
 impl Labels {
-    pub fn monster(&mut self, idx: usize) -> Option<&mut MonsterLabels> {
+    pub fn monster_mut(&mut self, idx: usize) -> Option<&mut MonsterLabels> {
         self.0.get_mut(idx)
+    }
+
+    pub fn monster(&self, idx: usize) -> Option<&MonsterLabels> {
+        self.0.get(idx)
     }
 }
 
 impl MonsterLabels {
-    pub fn part(&mut self, idx: usize) -> &mut Part {
-        assert!(idx < 9);
+    pub fn part_mut(&mut self, idx: usize) -> &mut Part {
         &mut self.0[idx]
+    }
+
+    pub fn part(&self, idx: usize) -> &Part {
+        &self.0[idx]
     }
 }
 
@@ -51,6 +58,13 @@ impl Part {
             });
             &mut self.hzvs.last_mut().unwrap().label
         }
+    }
+
+    pub fn get_hzv(&self, hzv_idx: usize) -> Option<&str> {
+        self.hzvs
+            .iter()
+            .find(|hzv| hzv.hzv_idx == hzv_idx)
+            .map(|hzv| hzv.label.as_ref())
     }
 }
 
