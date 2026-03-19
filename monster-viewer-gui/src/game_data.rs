@@ -216,7 +216,7 @@ pub fn monster_name(id: u8) -> &'static str {
         0x47 => "Old Fatalis",
         0x48 => "Yama Tsukami",
         0x49 => "Ceanataur",
-        0x4A => "Hynocatrice",
+        0x4A => "Hypnocatrice",
         0x4B => "Lavasioth",
         0x4C => "Tigrex",
         0x4D => "Akantor",
