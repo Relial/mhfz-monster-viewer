@@ -287,7 +287,7 @@ impl Viewer {
             TableBuilder::new(ui)
                 .striped(true)
                 .cell_layout(Layout::centered_and_justified(egui::Direction::TopDown))
-                .max_scroll_height(200.)
+                .max_scroll_height(205.)
                 .columns(Column::auto(), 6)
                 .header(18., |mut header| {
                     header.col(|ui| {

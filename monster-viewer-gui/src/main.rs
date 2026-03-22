@@ -9,6 +9,7 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+mod dump;
 mod game_data;
 mod ipc;
 mod label;
@@ -45,10 +46,9 @@ fn main() -> Result<()> {
         let labels = Labels::default();
         (settings, labels, TABLE_COLUMNS)
     };
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size(DEFAULT_SIZE)
-            .with_always_on_top()
             .with_position(DEFAULT_POS)
             .with_resizable(true)
             .with_decorations(false)
@@ -57,6 +57,9 @@ fn main() -> Result<()> {
         persistence_path: Some(persistence_path),
         ..Default::default()
     };
+    if settings.always_on_top {
+        options.viewport.window_level = Some(egui::WindowLevel::AlwaysOnTop);
+    }
     eframe::run_native(
         "Monster viewer",
         options,
