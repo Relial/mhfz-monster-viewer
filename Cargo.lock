@@ -2034,7 +2034,7 @@ dependencies = [
  "serde",
  "tracing",
  "tracing-subscriber",
- "windows 0.58.0",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -2049,7 +2049,7 @@ dependencies = [
  "serde",
  "tracing",
  "tracing-subscriber",
- "windows 0.58.0",
+ "windows 0.61.3",
 ]
 
 [[package]]
@@ -2067,6 +2067,7 @@ dependencies = [
  "mimalloc",
  "num-format",
  "postcard",
+ "rapidhash",
  "serde",
  "serde_json",
  "strum",
@@ -2853,6 +2854,15 @@ name = "range-alloc"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d6831663a5098ea164f89cff59c6284e95f4e3c76ce9848d4529f5ccca9bde"
+
+[[package]]
+name = "rapidhash"
+version = "4.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e48930979c155e2f33aa36ab3119b5ee81332beb6482199a8ecd6029b80b59"
+dependencies = [
+ "rustversion",
+]
 
 [[package]]
 name = "raw-window-handle"

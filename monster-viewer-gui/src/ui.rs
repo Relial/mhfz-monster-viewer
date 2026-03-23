@@ -15,14 +15,12 @@ use egui::{
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
+use rapidhash::{RapidHashMap, RapidHashSet};
 use serde::{Deserialize, Serialize};
 use strum::FromRepr;
 
 use crate::{
-    game_data::{DamageInstance, Monster, monster_name},
-    ipc::{MonsterData, handle_game_connection},
-    label::Labels,
-    save::save_settings,
+    dump::{self, MonsterState}, game_data::{DamageInstance, Monster, monster_name}, ipc::{MonsterData, handle_game_connection}, label::Labels, save::save_settings
 };
 
 const FIRE: Color32 = Color32::from_rgb(255, 72, 2);
@@ -125,7 +123,8 @@ pub struct Viewer {
     hit_log: Box<CircularBuffer<1000, DamageInstance>>,
     pub columns: [TableColumn; 13],
     pub labels: Labels,
-    highlights: HashSet<Highlight>,
+    highlights: RapidHashSet<Highlight>,
+    seen_variants: RapidHashMap<Monster, MonsterState>,
 }
 
 impl eframe::App for Viewer {
@@ -190,6 +189,7 @@ impl Viewer {
         settings: Settings,
         labels: Labels,
         columns: [TableColumn; 13],
+        seen_variants: ,
     ) -> Self {
         let (ipc_tx, ipc_rx) = mpsc::channel();
         let viewer = Self {
@@ -199,7 +199,8 @@ impl Viewer {
             hit_log: CircularBuffer::boxed(),
             columns,
             labels,
-            highlights: HashSet::new(),
+            highlights: RapidHashSet::default(),
+            seen_variants,
         };
         thread::spawn(|| {
             handle_game_connection(ctx, ipc_tx);

@@ -1,5 +1,5 @@
 use glam::Vec3;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ui::HzvColumn;
 
@@ -92,7 +92,7 @@ impl MonsterPart {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct HitzoneValues {
     _unk: u8,
     pub cut: u8,
@@ -320,5 +320,20 @@ pub fn monster_name(id: u8) -> &'static str {
         0xAF => "PSO2 Rappy",
         0xB0 => "King Shakalaka",
         _ => "Unknown ID",
+    }
+}
+
+impl std::hash::Hash for Monster {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.monster_id.hash(state);
+        self.parts.hash(state);
+    }
+}
+
+impl std::hash::Hash for MonsterPart {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.part_idx.hash(state);
+        self.hzv_idx.hash(state);
+        self.hzvs.hash(state);
     }
 }
