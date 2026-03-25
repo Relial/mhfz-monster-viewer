@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::ui::HzvColumn;
 
+pub const MONSTER_COUNT: usize = 176;
+
 #[derive(Deserialize, Clone)]
 pub struct Monster {
     pub struct_idx: u16,
@@ -104,21 +106,6 @@ pub struct HitzoneValues {
     pub thunder: i8,
     pub dragon: i8,
     pub stun: u8,
-}
-
-impl PartialEq for Monster {
-    fn eq(&self, other: &Self) -> bool {
-        self.struct_idx == other.struct_idx && self.monster_id == other.monster_id
-    }
-}
-
-impl PartialEq for MonsterPart {
-    fn eq(&self, other: &Self) -> bool {
-        self.part_idx == other.part_idx
-            && self.hzv_idx == other.hzv_idx
-            && self.hzvs == other.hzvs
-            && self.hitzone_count == other.hitzone_count
-    }
 }
 
 #[repr(C)]
@@ -323,12 +310,19 @@ pub fn monster_name(id: u8) -> &'static str {
     }
 }
 
-impl std::hash::Hash for Monster {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.monster_id.hash(state);
-        self.parts.hash(state);
+impl PartialEq for Monster {
+    fn eq(&self, other: &Self) -> bool {
+        self.struct_idx == other.struct_idx && self.monster_id == other.monster_id
     }
 }
+
+impl PartialEq for MonsterPart {
+    fn eq(&self, other: &Self) -> bool {
+        self.part_idx == other.part_idx && self.hzv_idx == other.hzv_idx && self.hzvs == other.hzvs
+    }
+}
+
+impl Eq for MonsterPart {}
 
 impl std::hash::Hash for MonsterPart {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {

@@ -1,5 +1,5 @@
 use std::{
-    cell::OnceCell,
+    cell::LazyCell,
     env::current_exe,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::PathBuf,
@@ -50,7 +50,7 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, Vec<
                 let mut highlights = Vec::new();
                 match &mut monster_data {
                     MonsterData::Monsters(monsters) => {
-                        let now = OnceCell::new();
+                        let now = LazyCell::new(Instant::now);
                         for (monster_i, monster) in monsters.iter_mut().enumerate() {
                             if let Some(prev) = previous_monsters.get(monster_i)
                                 && *prev == *monster
@@ -75,7 +75,7 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, Vec<
                                                             column: HzvColumn::from_repr(i)
                                                                 .unwrap(),
                                                         },
-                                                        triggered: *now.get_or_init(Instant::now),
+                                                        triggered: *now,
                                                     });
                                                 }
                                             }

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::game_data::MONSTER_COUNT;
+
 #[derive(Serialize, Deserialize)]
 pub struct Labels(Vec<MonsterLabels>);
 
@@ -70,7 +72,7 @@ impl Part {
 
 impl Default for Labels {
     fn default() -> Self {
-        Self(vec![MonsterLabels::default(); 176])
+        Self(vec![MonsterLabels::default(); MONSTER_COUNT])
     }
 }
 impl Default for MonsterLabels {

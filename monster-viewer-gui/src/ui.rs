@@ -1,6 +1,5 @@
 use std::{
     borrow::Borrow,
-    collections::HashSet,
     fmt::Display,
     sync::mpsc::{self, Receiver},
     thread,
@@ -15,12 +14,16 @@ use egui::{
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
-use rapidhash::{RapidHashMap, RapidHashSet};
+use rapidhash::{RapidHashSet};
 use serde::{Deserialize, Serialize};
 use strum::FromRepr;
 
 use crate::{
-    dump::{self, MonsterState}, game_data::{DamageInstance, Monster, monster_name}, ipc::{MonsterData, handle_game_connection}, label::Labels, save::save_settings
+    states::{MonsterStates, MonstersWithStates},
+    game_data::{DamageInstance, MONSTER_COUNT, Monster, monster_name},
+    ipc::{MonsterData, handle_game_connection},
+    label::Labels,
+    save::save_settings,
 };
 
 const FIRE: Color32 = Color32::from_rgb(255, 72, 2);
@@ -102,6 +105,16 @@ pub struct Settings {
     pub highlight_changes: bool,
 }
 
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            always_on_top: true,
+            background_opacity: 204,
+            highlight_changes: true,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Eq)]
 pub struct Highlight {
     pub id: HighlightID,
@@ -116,6 +129,22 @@ pub struct HighlightID {
     pub column: HzvColumn,
 }
 
+pub struct MonsterStatesView {
+    pub seen_states: MonstersWithStates,
+    selected_monster: u8,
+    selected_entry: usize,
+}
+
+impl MonsterStatesView {
+    pub fn new(seen_states: MonstersWithStates) -> Self {
+        Self {
+            seen_states,
+            selected_monster: 1,
+            selected_entry: 0,
+        }
+    }
+}
+
 pub struct Viewer {
     pub settings: Settings,
     ipc_rx: Receiver<(MonsterData, Vec<Highlight>)>,
@@ -124,7 +153,7 @@ pub struct Viewer {
     pub columns: [TableColumn; 13],
     pub labels: Labels,
     highlights: RapidHashSet<Highlight>,
-    seen_variants: RapidHashMap<Monster, MonsterState>,
+    pub states: MonsterStatesView,
 }
 
 impl eframe::App for Viewer {
@@ -165,8 +194,14 @@ impl eframe::App for Viewer {
                                 ui.take_available_space();
                                 self.receive_data();
                                 self.filter_columns(ui);
-                                self.damage_history(ui);
-                                self.monster_viewer(ui, ctx);
+                                let enabled_columns: Vec<TableColumn> = self
+                                    .columns
+                                    .iter()
+                                    .filter(|col| col.enabled)
+                                    .copied()
+                                    .collect();
+                                self.history(ui, &enabled_columns);
+                                self.monster_viewer(ui, ctx, &enabled_columns);
                             });
                     });
                 let window_rect = ctx.viewport_rect().shrink(1.);
@@ -189,7 +224,7 @@ impl Viewer {
         settings: Settings,
         labels: Labels,
         columns: [TableColumn; 13],
-        seen_variants: ,
+        states_view: MonsterStatesView,
     ) -> Self {
         let (ipc_tx, ipc_rx) = mpsc::channel();
         let viewer = Self {
@@ -200,7 +235,7 @@ impl Viewer {
             columns,
             labels,
             highlights: RapidHashSet::default(),
-            seen_variants,
+            states: states_view,
         };
         thread::spawn(|| {
             handle_game_connection(ctx, ipc_tx);
@@ -253,6 +288,11 @@ impl Viewer {
         while let Ok((monster_data, highlights)) = self.ipc_rx.try_recv() {
             match monster_data {
                 MonsterData::Monsters(monsters) => {
+                    for monster in &monsters {
+                        self.states
+                            .seen_states
+                            .handle_new(monster.monster_id, &monster.parts);
+                    }
                     self.monsters = monsters;
                     if self.settings.highlight_changes {
                         for new in highlights {
@@ -283,8 +323,15 @@ impl Viewer {
         });
     }
 
+    fn history(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {
+        egui::CollapsingHeader::new("History").show(ui, |ui| {
+            self.damage_history(ui);
+            self.hitzone_state_history(ui, enabled_columns);
+        });
+    }
+
     fn damage_history(&self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Attack history").show(ui, |ui| {
+        egui::CollapsingHeader::new("Attacks").show(ui, |ui| {
             TableBuilder::new(ui)
                 .striped(true)
                 .cell_layout(Layout::centered_and_justified(egui::Direction::TopDown))
@@ -347,10 +394,113 @@ impl Viewer {
         });
     }
 
-    fn monster_viewer(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn hitzone_state_history(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {
+        egui::CollapsingHeader::new("HZVs").show(ui, |ui| {
+            let current_monster_name = monster_name(self.states.selected_monster);
+            egui::ComboBox::from_id_salt("Hitzone states monster selection")
+                .selected_text(current_monster_name)
+                .show_ui(ui, |ui| {
+                    for i in 1..=MONSTER_COUNT {
+                        ui.selectable_value(
+                            &mut self.states.selected_monster,
+                            i as u8,
+                            monster_name(i as u8),
+                        );
+                    }
+                });
+            let Some(selected) = self.states.seen_states.get(self.states.selected_monster) else {
+                ui.label("Bad monster idx in hitzone state history");
+                return;
+            };
+            let enabled: Vec<_> = enabled_columns
+                .iter()
+                .filter(|column| {
+                    column.kind != HzvColumn::Count && column.kind != HzvColumn::Health
+                })
+                .collect();
+            for (i, parts) in selected.unique_states.iter().enumerate() {
+                egui::CollapsingHeader::new(format!("Entry {}", i)).show(ui, |ui| {
+                    let Some(labels) = self.labels.monster(self.states.selected_monster as usize)
+                    else {
+                        ui.label("Error: Bad monster ID");
+                        return;
+                    };
+
+                    TableBuilder::new(ui)
+                        .striped(true)
+                        .vscroll(false)
+                        .columns(Column::auto(), enabled.len())
+                        .header(18.0, |mut header| {
+                            for column in &enabled {
+                                header.col(|ui| {
+                                    ui.with_layout(
+                                        Layout::centered_and_justified(egui::Direction::TopDown),
+                                        |ui| {
+                                            ui.colored_label(column.color, column.kind.to_string());
+                                        },
+                                    );
+                                });
+                            }
+                        })
+                        .body(|mut body| {
+                            for part in parts {
+                                body.row(18.0, |mut row| {
+                                    for column in &enabled {
+                                        row.col(|ui| {
+                                            match &column.kind {
+                                                HzvColumn::Part => {
+                                                    ui.with_layout(
+                                                        Layout::top_down(Align::Center),
+                                                        |ui| {
+                                                            let label = &labels
+                                                                .part(part.part_idx as usize)
+                                                                .label;
+                                                            ui.colored_label(column.color, label);
+                                                        },
+                                                    );
+                                                }
+                                                HzvColumn::Hzv => {
+                                                    ui.with_layout(
+                                                        Layout::top_down(Align::Center),
+                                                        |ui| {
+                                                            let label = labels
+                                                                .part(part.part_idx as usize)
+                                                                .get_hzv(part.hzv_idx as usize)
+                                                                .unwrap_or("???");
+                                                            ui.colored_label(column.color, label);
+                                                        },
+                                                    );
+                                                }
+                                                _ => {
+                                                    ui.with_layout(
+                                                        Layout::centered_and_justified(
+                                                            egui::Direction::TopDown,
+                                                        ),
+                                                        |ui| {
+                                                            let label =
+                                                                part.table_display(column.kind);
+                                                            ui.colored_label(column.color, label);
+                                                        },
+                                                    );
+                                                }
+                                            };
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                });
+            }
+        });
+    }
+
+    fn monster_viewer(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        enabled_columns: &[TableColumn],
+    ) {
         let mut damaged_rect = None;
-        let enabled_columns: Vec<&TableColumn> =
-            self.columns.iter().filter(|col| col.enabled).collect();
         let mut widest_part: f32 = 0.0;
         let mut widest_hzv: f32 = 0.0;
         let paint_highlight = |ui: &mut egui::Ui, triggered: Instant| -> bool {
@@ -398,12 +548,12 @@ impl Viewer {
 
                 // All the auto sizing options cause row interact rects to span
                 // 2 rows for some reason so this is the workaround
-                for column in &enabled_columns {
+                for column in enabled_columns {
                     builder = builder.column(Column::exact(column.width));
                 }
                 builder
                     .header(18.0, |mut header| {
-                        for column in &enabled_columns {
+                        for column in enabled_columns {
                             header.col(|ui| {
                                 ui.with_layout(
                                     Layout::centered_and_justified(egui::Direction::TopDown),
@@ -421,7 +571,7 @@ impl Viewer {
                         let last_hit = self.hit_log.front();
                         for part in &monster.parts {
                             body.row(18.0, |mut row| {
-                                for column in &enabled_columns {
+                                for column in enabled_columns {
                                     row.col(|ui| {
                                         let highlight_id = HighlightID {
                                             monster_struct_idx: monster.struct_idx,

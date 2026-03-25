@@ -9,7 +9,7 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-mod dump;
+mod states;
 mod game_data;
 mod ipc;
 mod label;
@@ -19,11 +19,7 @@ mod ui;
 const DEFAULT_SIZE: Vec2 = Vec2::new(550.0, 400.0);
 const DEFAULT_POS: Pos2 = Pos2::new(0.0, 200.0);
 
-use crate::{
-    label::Labels,
-    save::load_settings,
-    ui::{Settings, TABLE_COLUMNS, Viewer},
-};
+use crate::{save::Save, ui::{MonsterStatesView, Viewer}};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
@@ -34,18 +30,9 @@ fn main() -> Result<()> {
         .parent()
         .ok_or(anyhow!("Couldn't get executable directory"))?
         .join("window.ron");
-    let (settings, labels, columns) = if let Ok((mut saved_settings, labels)) = load_settings() {
-        saved_settings.default_column_widths_colors();
-        (saved_settings.settings, labels, saved_settings.columns)
-    } else {
-        let settings = Settings {
-            always_on_top: true,
-            background_opacity: 204,
-            highlight_changes: true,
-        };
-        let labels = Labels::default();
-        (settings, labels, TABLE_COLUMNS)
-    };
+
+    let save = Save::load().unwrap_or_default();
+    let seen_states = MonsterStatesView::new(save.states);
     let mut options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size(DEFAULT_SIZE)
@@ -57,7 +44,7 @@ fn main() -> Result<()> {
         persistence_path: Some(persistence_path),
         ..Default::default()
     };
-    if settings.always_on_top {
+    if save.settings.always_on_top {
         options.viewport.window_level = Some(egui::WindowLevel::AlwaysOnTop);
     }
     eframe::run_native(
@@ -76,9 +63,10 @@ fn main() -> Result<()> {
             ctx.egui_ctx.set_theme(egui::Theme::Dark);
             Ok(Box::new(Viewer::new(
                 ctx.egui_ctx.clone(),
-                settings,
-                labels,
-                columns,
+                save.settings,
+                save.labels,
+                save.columns,
+                seen_states,
             )))
         }),
     )
