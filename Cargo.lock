@@ -225,6 +225,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "arrayvec-const"
+version = "0.7.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4561611ba270637bfa00e98dac763ab6c325dfce32771b2218516cb27941fe"
+dependencies = [
+ "const_panic",
+]
+
+[[package]]
 name = "as-raw-xcb-connection"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2070,6 +2079,7 @@ dependencies = [
  "rapidhash",
  "serde",
  "serde_json",
+ "sort-const",
  "strum",
  "strum_macros",
  "tracing",
@@ -3253,6 +3263,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd538fb6910ac1099850255cf94a94df6551fbdd602454387d0adb2d1ca6dead"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "sort-const"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beb9c5e87e55c5a84c167462de7fa58b9fd66f66afebe096fcf8d6105431de87"
+dependencies = [
+ "arrayvec-const",
 ]
 
 [[package]]

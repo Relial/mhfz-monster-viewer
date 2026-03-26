@@ -14,16 +14,17 @@ use egui::{
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
-use rapidhash::{RapidHashSet};
+use rapidhash::RapidHashSet;
 use serde::{Deserialize, Serialize};
+use sort_const::const_quicksort;
 use strum::FromRepr;
 
 use crate::{
-    states::{MonsterStates, MonstersWithStates},
-    game_data::{DamageInstance, MONSTER_COUNT, Monster, monster_name},
+    game_data::{DamageInstance, MONSTER_COUNT, MONSTERS_ALPHABETICAL, Monster, monster_name},
     ipc::{MonsterData, handle_game_connection},
     label::Labels,
     save::save_settings,
+    states::{MonsterStates, MonstersWithStates},
 };
 
 const FIRE: Color32 = Color32::from_rgb(255, 72, 2);
@@ -132,15 +133,13 @@ pub struct HighlightID {
 pub struct MonsterStatesView {
     pub seen_states: MonstersWithStates,
     selected_monster: u8,
-    selected_entry: usize,
 }
 
 impl MonsterStatesView {
     pub fn new(seen_states: MonstersWithStates) -> Self {
         Self {
             seen_states,
-            selected_monster: 1,
-            selected_entry: 0,
+            selected_monster: 0x68, // Abiorg, first in alphabetical order
         }
     }
 }
@@ -400,12 +399,8 @@ impl Viewer {
             egui::ComboBox::from_id_salt("Hitzone states monster selection")
                 .selected_text(current_monster_name)
                 .show_ui(ui, |ui| {
-                    for i in 1..=MONSTER_COUNT {
-                        ui.selectable_value(
-                            &mut self.states.selected_monster,
-                            i as u8,
-                            monster_name(i as u8),
-                        );
+                    for (i, name) in MONSTERS_ALPHABETICAL {
+                        ui.selectable_value(&mut self.states.selected_monster, i, name);
                     }
                 });
             let Some(selected) = self.states.seen_states.get(self.states.selected_monster) else {
