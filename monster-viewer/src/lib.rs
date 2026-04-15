@@ -74,14 +74,10 @@ extern "system" fn main(lp_parameter: *mut c_void) -> u32 {
         warn!("Something went wrong: {e}");
     }
     unsafe {
-        if FreeConsole().is_ok() {
-            info!("Cleaned up successfully. Exiting");
-            FreeLibraryAndExitThread(HMODULE(lp_parameter), 1);
-        } else {
-            warn!("Failed to clean up, leaving dll loaded to avoid crashing the game");
-        }
+        FreeConsole().unwrap(); // If this fails a crash is inevitable
+        FreeLibraryAndExitThread(HMODULE(lp_parameter), 0);
     }
-    1
+    1 // Never reached
 }
 
 #[unsafe(no_mangle)]
