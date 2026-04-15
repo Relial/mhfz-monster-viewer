@@ -8,9 +8,9 @@ use std::{
 
 use circular_buffer::CircularBuffer;
 use egui::{
-    self, Align, Button, Color32, CornerRadius, CursorIcon, Frame, Layout, Margin, Pos2, Rect,
-    ResizeDirection, RichText, Sense, Shadow, Stroke, Vec2, ViewportCommand, WindowLevel,
-    scroll_area::ScrollSource, vec2,
+    self, Align, Button, CollapsingHeader, Color32, CornerRadius, CursorIcon, Direction, Frame,
+    Layout, Margin, Pos2, Rect, ResizeDirection, RichText, Sense, Shadow, Stroke, Vec2,
+    ViewportCommand, WindowLevel, scroll_area::ScrollSource, vec2,
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
@@ -144,11 +144,82 @@ impl MonsterStatesView {
     }
 }
 
+struct PartHzvHitStats {
+    part_idx: u16,
+    hzv_idx: u16,
+    hits: u64,
+}
+
+impl PartHzvHitStats {
+    fn new(damage_instance: &DamageInstance) -> Self {
+        Self {
+            part_idx: damage_instance.hitzone.part_idx,
+            hzv_idx: damage_instance.hitzone.hzv_idx,
+            hits: 1,
+        }
+    }
+}
+
+struct MonsterHitStats {
+    monster_id: u8,
+    hits: Vec<PartHzvHitStats>,
+}
+
+impl MonsterHitStats {
+    fn new(damage_instance: &DamageInstance) -> Self {
+        Self {
+            monster_id: damage_instance.monster_id,
+            hits: vec![PartHzvHitStats::new(damage_instance)],
+        }
+    }
+
+    fn increment_or_add(&mut self, damage_instance: &DamageInstance) {
+        if let Some(part_stats) = self.hits.iter_mut().find(|stats| {
+            stats.part_idx == damage_instance.hitzone.part_idx
+                && stats.hzv_idx == damage_instance.hitzone.hzv_idx
+        }) {
+            part_stats.hits += 1;
+        } else {
+            self.hits.push(PartHzvHitStats::new(damage_instance));
+            self.hits.sort_by_key(|hit| (hit.part_idx, hit.hzv_idx));
+        }
+    }
+}
+
+struct HitLogStats {
+    monsters: Vec<MonsterHitStats>,
+}
+
+impl HitLogStats {
+    fn new() -> Self {
+        Self {
+            monsters: Vec::new(),
+        }
+    }
+
+    fn add_hit(&mut self, damage_instance: &DamageInstance) {
+        match self
+            .monsters
+            .binary_search_by_key(&damage_instance.monster_id, |mon_stats| {
+                mon_stats.monster_id
+            }) {
+            Ok(stats_idx) => {
+                self.monsters[stats_idx].increment_or_add(damage_instance);
+            }
+            Err(stats_idx) => {
+                self.monsters
+                    .insert(stats_idx, MonsterHitStats::new(damage_instance));
+            }
+        }
+    }
+}
+
 pub struct Viewer {
     pub settings: Settings,
     ipc_rx: Receiver<(MonsterData, Vec<Highlight>)>,
     monsters: Vec<Monster>,
     hit_log: Box<CircularBuffer<1000, DamageInstance>>,
+    hit_log_stats: HitLogStats,
     pub columns: [TableColumn; 13],
     pub labels: Labels,
     highlights: RapidHashSet<Highlight>,
@@ -235,6 +306,7 @@ impl Viewer {
             labels,
             highlights: RapidHashSet::default(),
             states: states_view,
+            hit_log_stats: HitLogStats::new(),
         };
         thread::spawn(|| {
             handle_game_connection(ctx, ipc_tx);
@@ -301,13 +373,14 @@ impl Viewer {
                 }
                 MonsterData::DamageInstance(damage_instance) => {
                     self.hit_log.push_front(damage_instance);
+                    self.hit_log_stats.add_hit(&damage_instance);
                 }
             }
         }
     }
 
     fn filter_columns(&mut self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Filter columns").show(ui, |ui| {
+        CollapsingHeader::new("Filter columns").show(ui, |ui| {
             egui::Grid::new("Filters").show(ui, |ui| {
                 for columns in self.columns.chunks_mut(7) {
                     for column in columns {
@@ -323,20 +396,67 @@ impl Viewer {
     }
 
     fn history(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {
-        egui::CollapsingHeader::new("History").show(ui, |ui| {
+        CollapsingHeader::new("History").show(ui, |ui| {
             self.damage_history(ui);
             self.hitzone_state_history(ui, enabled_columns);
         });
     }
 
-    fn damage_history(&self, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new("Attacks").show(ui, |ui| {
+    fn damage_history(&mut self, ui: &mut egui::Ui) {
+        CollapsingHeader::new("Stats").show(ui, |ui| {
+            if ui.button("Reset stats").clicked() {
+                self.hit_log_stats.monsters.clear();
+            }
+            for monster in &self.hit_log_stats.monsters {
+                CollapsingHeader::new(monster_name(monster.monster_id)).show(ui, |ui| {
+                    TableBuilder::new(ui)
+                        .striped(true)
+                        .cell_layout(Layout::centered_and_justified(Direction::TopDown))
+                        .columns(Column::auto(), 3)
+                        .header(18.0, |mut header| {
+                            header.col(|ui| {
+                                ui.label("Part");
+                            });
+                            header.col(|ui| {
+                                ui.label("HZV");
+                            });
+                            header.col(|ui| {
+                                ui.label("Hits");
+                            });
+                        })
+                        .body(|body| {
+                            body.rows(18.0, monster.hits.len(), |mut row| {
+                                let stats = &monster.hits[row.index()];
+                                let Some(labels) = self.labels.monster(monster.monster_id as usize)
+                                else {
+                                    return;
+                                };
+                                let part = labels.part(stats.part_idx as usize);
+                                row.col(|ui| {
+                                    ui.label(&part.label);
+                                });
+                                row.col(|ui| {
+                                    if let Some(label) = part.get_hzv(stats.hzv_idx as usize) {
+                                        ui.label(label);
+                                    } else {
+                                        ui.label(stats.hzv_idx.to_string());
+                                    }
+                                });
+                                row.col(|ui| {
+                                    ui.label(stats.hits.to_string());
+                                });
+                            });
+                        });
+                });
+            }
+        });
+        CollapsingHeader::new("Attacks").show(ui, |ui| {
             TableBuilder::new(ui)
                 .striped(true)
-                .cell_layout(Layout::centered_and_justified(egui::Direction::TopDown))
+                .cell_layout(Layout::centered_and_justified(Direction::TopDown))
                 .max_scroll_height(205.)
                 .columns(Column::auto(), 6)
-                .header(18., |mut header| {
+                .header(18.0, |mut header| {
                     header.col(|ui| {
                         ui.label("Monster");
                     });
@@ -357,7 +477,7 @@ impl Viewer {
                     });
                 })
                 .body(|body| {
-                    body.rows(18., self.hit_log.len(), |mut row| {
+                    body.rows(18.0, self.hit_log.len(), |mut row| {
                         let hit = self.hit_log[row.index()];
                         let Some(labels) = self.labels.monster(hit.monster_id as usize) else {
                             return;
@@ -394,7 +514,7 @@ impl Viewer {
     }
 
     fn hitzone_state_history(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {
-        egui::CollapsingHeader::new("HZVs").show(ui, |ui| {
+        CollapsingHeader::new("HZVs").show(ui, |ui| {
             let current_monster_name = monster_name(self.states.selected_monster);
             egui::ComboBox::from_id_salt("Hitzone states monster selection")
                 .selected_text(current_monster_name)
@@ -414,7 +534,7 @@ impl Viewer {
                 })
                 .collect();
             for (i, parts) in selected.unique_states.iter().enumerate() {
-                egui::CollapsingHeader::new(format!("Entry {}", i)).show(ui, |ui| {
+                CollapsingHeader::new(format!("Entry {}", i)).show(ui, |ui| {
                     let Some(labels) = self.labels.monster(self.states.selected_monster as usize)
                     else {
                         ui.label("Error: Bad monster ID");
@@ -429,7 +549,7 @@ impl Viewer {
                             for column in &enabled {
                                 header.col(|ui| {
                                     ui.with_layout(
-                                        Layout::centered_and_justified(egui::Direction::TopDown),
+                                        Layout::centered_and_justified(Direction::TopDown),
                                         |ui| {
                                             ui.colored_label(column.color, column.kind.to_string());
                                         },
@@ -469,7 +589,7 @@ impl Viewer {
                                                 _ => {
                                                     ui.with_layout(
                                                         Layout::centered_and_justified(
-                                                            egui::Direction::TopDown,
+                                                            Direction::TopDown,
                                                         ),
                                                         |ui| {
                                                             let label =
@@ -511,7 +631,7 @@ impl Viewer {
             true
         };
         for (i, monster) in self.monsters.iter().enumerate() {
-            egui::CollapsingHeader::new(format!(
+            CollapsingHeader::new(format!(
                 "Entry {} ({})",
                 monster.struct_idx,
                 monster_name(monster.monster_id)
@@ -551,7 +671,7 @@ impl Viewer {
                         for column in enabled_columns {
                             header.col(|ui| {
                                 ui.with_layout(
-                                    Layout::centered_and_justified(egui::Direction::TopDown),
+                                    Layout::centered_and_justified(Direction::TopDown),
                                     |ui| {
                                         let resp = ui.colored_label(column.color, column.kind.to_string());
                                         if column.kind == HzvColumn::Count {
@@ -633,7 +753,7 @@ impl Viewer {
                                             _ => {
                                                 ui.with_layout(
                                                     Layout::centered_and_justified(
-                                                        egui::Direction::TopDown,
+                                                        Direction::TopDown,
                                                     ),
                                                     |ui| {
                                                         let label = part.table_display(column.kind);
