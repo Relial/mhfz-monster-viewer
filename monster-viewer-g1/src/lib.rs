@@ -73,7 +73,6 @@ extern "system" fn main(lp_parameter: *mut c_void) -> u32 {
         warn!("Something went wrong: {e}");
     }
     unsafe {
-        FreeConsole().unwrap(); // If this fails a crash is inevitable
         FreeLibraryAndExitThread(HMODULE(lp_parameter), 0);
     }
     1 // Never reached
