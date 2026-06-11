@@ -304,9 +304,9 @@ impl Viewer {
             Rect::from_center_size(window_rect.right_top() + vec2(-18.0, 10.0), vec2(8.0, 8.0));
         let resp = ui.interact(button_rect, "Close button".into(), Sense::click());
         let painter = ui.painter();
-        let stroke = Stroke::new(1.0_f32, Color32::WHITE);
-        painter.line_segment([button_rect.left_top(), button_rect.right_bottom()], stroke);
-        painter.line_segment([button_rect.left_bottom(), button_rect.right_top()], stroke);
+        let visuals = ui.style().interact(&resp);
+        painter.line_segment([button_rect.left_top(), button_rect.right_bottom()], visuals.fg_stroke);
+        painter.line_segment([button_rect.left_bottom(), button_rect.right_top()], visuals.fg_stroke);
         if resp.clicked() {
             ui.send_viewport_cmd(ViewportCommand::Close);
         }
