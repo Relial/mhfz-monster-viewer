@@ -11,19 +11,13 @@ use std::{
 use anyhow::{Result, anyhow};
 use dll_syringe::{Syringe, process::OwnedProcess};
 use egui::Context;
-use serde::Deserialize;
+use shared::{Monster, MonsterData};
 use tracing::info;
 
 use crate::{
-    game_data::{DamageInstance, Monster},
+    game_data::MonsterPartExt as _,
     ui::{Highlight, HighlightID, HzvColumn},
 };
-
-#[derive(Deserialize)]
-pub enum MonsterData {
-    Monsters(Vec<Monster>),
-    DamageInstance(DamageInstance),
-}
 
 struct GameConnection {
     stream: TcpStream,
@@ -59,6 +53,7 @@ pub fn handle_game_connection(ui_ctx: Context, ipc_tx: Sender<(MonsterData, Vec<
                                     || prev.defense_multi != monster.defense_multi
                                     || prev.current_health != monster.current_health
                                     || prev.max_health != monster.max_health
+                                    || prev.status != monster.status
                                 {
                                     send_to_ui = true;
                                 }

@@ -1,6 +1,7 @@
 use std::{
     borrow::Borrow,
     fmt::Display,
+    hash::Hash,
     sync::mpsc::{self, Receiver},
     thread,
     time::{Duration, Instant},
@@ -8,23 +9,24 @@ use std::{
 
 use circular_buffer::CircularBuffer;
 use egui::{
-    self, Align, Button, CollapsingHeader, Color32, CornerRadius, CursorIcon, Direction, Frame,
-    Layout, Margin, Pos2, Rect, ResizeDirection, RichText, Sense, Shadow, Stroke, Vec2,
+    self, Align, CollapsingHeader, Color32, CornerRadius, CursorIcon, Direction, Frame, Grid,
+    Layout, Margin, Pos2, Rect, ResizeDirection, RichText, Sense, Shadow, Stroke, TextEdit, Vec2,
     ViewportCommand, WindowLevel, scroll_area::ScrollSource, vec2,
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
 use rapidhash::RapidHashSet;
 use serde::{Deserialize, Serialize};
-use sort_const::const_quicksort;
+use shared::{AllStatus, DamageInstance, Monster, MonsterData, Status};
 use strum::FromRepr;
 
 use crate::{
-    game_data::{DamageInstance, MONSTER_COUNT, MONSTERS_ALPHABETICAL, Monster, monster_name},
-    ipc::{MonsterData, handle_game_connection},
+    config::Config,
+    game_data::{MONSTERS_ALPHABETICAL, MonsterPartExt as _, monster_name},
+    ipc::handle_game_connection,
     label::Labels,
     save::save_settings,
-    states::{MonsterStates, MonstersWithStates},
+    states::MonstersWithStates,
 };
 
 const FIRE: Color32 = Color32::from_rgb(255, 72, 2);
@@ -32,6 +34,13 @@ const WATER: Color32 = Color32::from_rgb(146, 235, 255);
 const ICE: Color32 = Color32::from_rgb(173, 206, 247);
 const THUNDER: Color32 = Color32::from_rgb(255, 254, 3);
 const DRAGON: Color32 = Color32::from_rgb(107, 114, 182);
+
+const POISON: Color32 = Color32::from_rgb(160, 113, 155);
+const PARA: Color32 = Color32::from_rgb(209, 192, 120);
+const SLEEP: Color32 = Color32::from_rgb(94, 118, 182);
+const BLAST: Color32 = Color32::from_rgb(148, 111, 84);
+const STUN: Color32 = Color32::WHITE;
+const TRANQ: Color32 = Color32::from_rgb(225, 80, 92);
 
 pub const TABLE_COLUMNS: [TableColumn; 13] = [
     TableColumn::new(HzvColumn::Part, Color32::GRAY, 80.0),
@@ -95,23 +104,6 @@ impl TableColumn {
             enabled: true,
             color,
             width: column_width,
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq)]
-pub struct Settings {
-    pub always_on_top: bool,
-    pub background_opacity: u8,
-    pub highlight_changes: bool,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            always_on_top: true,
-            background_opacity: 204,
-            highlight_changes: true,
         }
     }
 }
@@ -215,7 +207,7 @@ impl HitLogStats {
 }
 
 pub struct Viewer {
-    pub settings: Settings,
+    pub config: Config,
     ipc_rx: Receiver<(MonsterData, Vec<Highlight>)>,
     monsters: Vec<Monster>,
     hit_log: Box<CircularBuffer<1000, DamageInstance>>,
@@ -227,30 +219,20 @@ pub struct Viewer {
 }
 
 impl eframe::App for Viewer {
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
+        let opacity =
+            ((self.config.background_opacity as f32 / 100.0) * u8::MAX as f32).round() as u8;
         egui::CentralPanel::default()
-            .frame(PANEL_FRAME.fill(Color32::from_rgba_unmultiplied(
-                12,
-                12,
-                12,
-                self.settings.background_opacity,
-            )))
-            .show(ctx, |ui| {
+            .frame(PANEL_FRAME.fill(Color32::from_rgba_unmultiplied(12, 12, 12, opacity)))
+            .show_inside(ui, |ui| {
                 let viewer_rect = ui.max_rect();
                 let background_resp = ui.interact(viewer_rect, "Move area".into(), Sense::DRAG);
                 if background_resp.drag_started_by(egui::PointerButton::Primary) {
-                    ctx.send_viewport_cmd(ViewportCommand::StartDrag);
+                    ui.send_viewport_cmd(ViewportCommand::StartDrag);
                 }
 
-                handle_zoom(ctx);
+                handle_zoom(ui);
 
-                egui::TopBottomPanel::top("Top panel")
-                    .frame(Frame::NONE)
-                    .show_separator_line(false)
-                    .resizable(false)
-                    .show_inside(ui, |ui| {
-                        self.controls(ui, ctx);
-                    });
                 egui::CentralPanel::default()
                     .frame(Frame::NONE)
                     .show_inside(ui, |ui| {
@@ -263,7 +245,7 @@ impl eframe::App for Viewer {
                             .show(ui, |ui| {
                                 ui.take_available_space();
                                 self.receive_data();
-                                self.filter_columns(ui);
+                                self.settings(ui);
                                 let enabled_columns: Vec<TableColumn> = self
                                     .columns
                                     .iter()
@@ -271,14 +253,16 @@ impl eframe::App for Viewer {
                                     .copied()
                                     .collect();
                                 self.history(ui, &enabled_columns);
-                                self.monster_viewer(ui, ctx, &enabled_columns);
+                                self.monster_viewer(ui, &enabled_columns);
                             });
+
+                        self.close_button(ui);
                     });
-                let window_rect = ctx.viewport_rect().shrink(1.);
-                handle_window_resize(ui, ctx, window_rect);
+                let window_rect = ui.viewport_rect().shrink(1.);
+                handle_window_resize(ui, window_rect);
             });
 
-        if ctx.input(|i| i.viewport().close_requested()) {
+        if ui.input(|i| i.viewport().close_requested()) {
             let _ = save_settings(self);
         }
     }
@@ -291,14 +275,14 @@ impl eframe::App for Viewer {
 impl Viewer {
     pub fn new(
         ctx: egui::Context,
-        settings: Settings,
+        config: Config,
         labels: Labels,
         columns: [TableColumn; 13],
         states_view: MonsterStatesView,
     ) -> Self {
         let (ipc_tx, ipc_rx) = mpsc::channel();
         let viewer = Self {
-            settings,
+            config,
             ipc_rx,
             monsters: Vec::new(),
             hit_log: CircularBuffer::boxed(),
@@ -314,43 +298,60 @@ impl Viewer {
         viewer
     }
 
-    fn controls(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            ui.visuals_mut().button_frame = false;
-            ui.add_space(8.);
-            let button_height = Vec2::splat(20.);
-            let close_resp = ui.add(Button::new("❌").min_size(button_height));
-            if close_resp.clicked() {
-                ctx.send_viewport_cmd(ViewportCommand::Close);
-            }
+    fn close_button(&mut self, ui: &mut egui::Ui) {
+        let window_rect = ui.max_rect();
+        let button_rect =
+            Rect::from_center_size(window_rect.right_top() + vec2(-18.0, 10.0), vec2(8.0, 8.0));
+        let resp = ui.interact(button_rect, "Close button".into(), Sense::click());
+        let painter = ui.painter();
+        let stroke = Stroke::new(1.0_f32, Color32::WHITE);
+        painter.line_segment([button_rect.left_top(), button_rect.right_bottom()], stroke);
+        painter.line_segment([button_rect.left_bottom(), button_rect.right_top()], stroke);
+        if resp.clicked() {
+            ui.send_viewport_cmd(ViewportCommand::Close);
+        }
+    }
 
-            ui.visuals_mut().button_frame = true;
-            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+    fn settings(&mut self, ui: &mut egui::Ui) {
+        CollapsingHeader::new("Settings").show(ui, |ui| {
+            ui.horizontal(|ui| {
                 ui.label("Background opacity: ");
                 ui.add_sized(
                     [20., 20.],
-                    egui::DragValue::new(&mut self.settings.background_opacity)
-                        .custom_formatter(|n, _| {
-                            let actual = (n / 255. * 100.).round().clamp(0., 100.) as usize;
-                            actual.to_string()
-                        })
-                        .custom_parser(|s| {
-                            let n: f64 = s.parse().ok()?;
-                            let actual = (n / 100. * 255.).round().clamp(0., 255.);
-                            Some(actual)
-                        })
-                        .range(0..=255),
+                    egui::DragValue::new(&mut self.config.background_opacity).range(0..=100),
                 );
-                let on_top_resp = ui.checkbox(&mut self.settings.always_on_top, "Always on top");
-                if on_top_resp.clicked() {
-                    let level = if self.settings.always_on_top {
-                        WindowLevel::AlwaysOnTop
-                    } else {
-                        WindowLevel::Normal
-                    };
-                    ctx.send_viewport_cmd(ViewportCommand::WindowLevel(level));
-                }
-                ui.checkbox(&mut self.settings.highlight_changes, "Highlight changes");
+            });
+            let on_top_resp = ui.checkbox(&mut self.config.always_on_top, "Always on top");
+            if on_top_resp.clicked() {
+                let level = if self.config.always_on_top {
+                    WindowLevel::AlwaysOnTop
+                } else {
+                    WindowLevel::Normal
+                };
+                ui.send_viewport_cmd(ViewportCommand::WindowLevel(level));
+            }
+            ui.checkbox(&mut self.config.highlight_changes, "Highlight changes");
+
+            CollapsingHeader::new("Visibility").show(ui, |ui| {
+                ui.checkbox(&mut self.config.visibility.health, "Health");
+                ui.checkbox(&mut self.config.visibility.attack, "Attack");
+                ui.checkbox(&mut self.config.visibility.defense, "Defense");
+                ui.checkbox(&mut self.config.visibility.status, "Status");
+                ui.checkbox(&mut self.config.visibility.parts, "Parts/HZVs");
+            });
+
+            CollapsingHeader::new("Filter columns").show(ui, |ui| {
+                egui::Grid::new("Filters").show(ui, |ui| {
+                    for columns in self.columns.chunks_mut(7) {
+                        for column in columns {
+                            ui.checkbox(
+                                &mut column.enabled,
+                                RichText::new(column.kind.to_string()).color(column.color),
+                            );
+                        }
+                        ui.end_row();
+                    }
+                });
             });
         });
     }
@@ -365,7 +366,7 @@ impl Viewer {
                             .handle_new(monster.monster_id, &monster.parts);
                     }
                     self.monsters = monsters;
-                    if self.settings.highlight_changes {
+                    if self.config.highlight_changes {
                         for new in highlights {
                             self.highlights.replace(new);
                         }
@@ -377,22 +378,6 @@ impl Viewer {
                 }
             }
         }
-    }
-
-    fn filter_columns(&mut self, ui: &mut egui::Ui) {
-        CollapsingHeader::new("Filter columns").show(ui, |ui| {
-            egui::Grid::new("Filters").show(ui, |ui| {
-                for columns in self.columns.chunks_mut(7) {
-                    for column in columns {
-                        ui.checkbox(
-                            &mut column.enabled,
-                            RichText::new(column.kind.to_string()).color(column.color),
-                        );
-                    }
-                    ui.end_row();
-                }
-            });
-        });
     }
 
     fn history(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {
@@ -609,12 +594,7 @@ impl Viewer {
         });
     }
 
-    fn monster_viewer(
-        &mut self,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        enabled_columns: &[TableColumn],
-    ) {
+    fn monster_viewer(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {
         let mut damaged_rect = None;
         let mut widest_part: f32 = 0.0;
         let mut widest_hzv: f32 = 0.0;
@@ -627,7 +607,7 @@ impl Viewer {
             let highlight_color = Color32::from_rgba_unmultiplied(0, 92, 128, bg_alpha);
             let rect = ui.max_rect();
             ui.painter().rect_filled(rect, 0.0, highlight_color);
-            ctx.request_repaint_after(HIGHLIGHT_REFRESH);
+            ui.request_repaint_after(HIGHLIGHT_REFRESH);
             true
         };
         for (i, monster) in self.monsters.iter().enumerate() {
@@ -646,19 +626,28 @@ impl Viewer {
                     (monster.current_health as f32 / monster.defense_multi).round() as u64;
                 let effective_max =
                     (monster.max_health as f32 / monster.defense_multi).round() as u64;
-                ui.label(format!(
-                    "Health: {}/{} (effective {}/{})",
-                    monster.current_health.to_formatted_string(&Locale::en),
-                    monster.max_health.to_formatted_string(&Locale::en),
-                    effective_current.to_formatted_string(&Locale::en),
-                    effective_max.to_formatted_string(&Locale::en)
-                ));
-                ui.label(format!("Attack multiplier: {:.4}", monster.attack_multi));
-                ui.label(format!("Defense multiplier: {:.4}", monster.defense_multi));
-                ui.separator();
-                if monster.parts.is_empty() {
+                if self.config.visibility.health {
+                    ui.label(format!(
+                        "Health: {}/{} (effective {}/{})",
+                        monster.current_health.to_formatted_string(&Locale::en),
+                        monster.max_health.to_formatted_string(&Locale::en),
+                        effective_current.to_formatted_string(&Locale::en),
+                        effective_max.to_formatted_string(&Locale::en)
+                    ));
+                }
+                if self.config.visibility.attack {
+                    ui.label(format!("Attack multiplier: {:.4}", monster.attack_multi));
+                }
+                if self.config.visibility.defense {
+                    ui.label(format!("Defense multiplier: {:.4}", monster.defense_multi));
+                }
+                if self.config.visibility.status {
+                    monster.status.ui(ui, (i, "Status"));
+                }
+                if !self.config.visibility.parts || monster.parts.is_empty() {
                     return;
                 }
+                ui.separator();
                 let mut builder = TableBuilder::new(ui).striped(true).vscroll(false);
 
                 // All the auto sizing options cause row interact rects to span
@@ -705,15 +694,12 @@ impl Viewer {
                                                         let label = &mut labels
                                                             .part_mut(part.part_idx as usize)
                                                             .label;
-                                                        let resp =
-                                                            egui::TextEdit::singleline(label)
+                                                        let resp = ui.add(TextEdit::singleline(label)
                                                                 .text_color(column.color)
                                                                 .horizontal_align(Align::Center)
                                                                 .clip_text(false)
                                                                 .desired_width(30.0)
-                                                                .margin(Margin::symmetric(8, 2))
-                                                                .show(ui)
-                                                                .response.on_hover_text(part.part_idx.to_string());
+                                                                .margin(Margin::symmetric(8, 2))).on_hover_text(part.part_idx.to_string());
                                                         widest_part = (resp.rect.max.x
                                                             - resp.rect.min.x)
                                                             .max(widest_part);
@@ -732,15 +718,12 @@ impl Viewer {
                                                             .get_or_insert_hzv(
                                                                 part.hzv_idx as usize,
                                                             );
-                                                        let resp =
-                                                            egui::TextEdit::singleline(label)
+                                                        let resp = ui.add(TextEdit::singleline(label)
                                                                 .text_color(column.color)
                                                                 .horizontal_align(Align::Center)
                                                                 .clip_text(false)
                                                                 .desired_width(30.0)
-                                                                .margin(Margin::symmetric(8, 2))
-                                                                .show(ui)
-                                                                .response.on_hover_text(part.hzv_idx.to_string());
+                                                                .margin(Margin::symmetric(8, 2))).on_hover_text(part.hzv_idx.to_string());
                                                         widest_hzv = (resp.rect.max.x
                                                             - resp.rect.min.x)
                                                             .max(widest_hzv);
@@ -764,7 +747,7 @@ impl Viewer {
                                         };
                                     });
                                 }
-                                if self.settings.highlight_changes
+                                if self.config.highlight_changes
                                     && let Some(last) = last_hit
                                     && last.monster_id == monster.monster_id
                                     && last.struct_idx == monster.struct_idx
@@ -781,7 +764,7 @@ impl Viewer {
 
         if let Some(rect) = damaged_rect {
             let painter = ui.painter();
-            let stroke = Stroke::new(0.5, Color32::WHITE);
+            let stroke = Stroke::new(0.5_f32, Color32::WHITE);
             painter.hline(rect.x_range(), rect.top(), stroke);
             painter.hline(rect.x_range(), rect.bottom(), stroke);
             painter.vline(rect.left(), rect.y_range(), stroke);
@@ -789,6 +772,56 @@ impl Viewer {
         }
         self.columns[0].width = widest_part;
         self.columns[1].width = widest_hzv;
+    }
+}
+
+trait StatusUi {
+    fn ui(&self, ui: &mut egui::Ui, grid_id_salt: impl Hash);
+}
+
+impl StatusUi for AllStatus {
+    fn ui(&self, ui: &mut egui::Ui, grid_id_salt: impl Hash) {
+        let status_fmt =
+            |status: &Status| -> String { format!("{}/{}", status.current, status.threshold) };
+
+        Grid::new(grid_id_salt).show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.colored_label(POISON, "Poison");
+                let duration = if let Some(dur) = self.poison.duration {
+                    let seconds = dur / 30;
+                    format!("{}s", seconds)
+                } else {
+                    "0s".to_string()
+                };
+                ui.colored_label(
+                    POISON,
+                    format!("{} ({})", status_fmt(&self.poison.base), duration),
+                );
+            });
+            ui.vertical(|ui| {
+                ui.colored_label(SLEEP, "Sleep");
+                ui.colored_label(SLEEP, status_fmt(&self.sleep));
+            });
+            ui.vertical(|ui| {
+                ui.colored_label(STUN, "Stun");
+                ui.colored_label(STUN, status_fmt(&self.stun));
+            });
+
+            ui.end_row();
+
+            ui.vertical(|ui| {
+                ui.colored_label(PARA, "Para");
+                ui.colored_label(PARA, status_fmt(&self.paralysis));
+            });
+            ui.vertical(|ui| {
+                ui.colored_label(BLAST, "Blast");
+                ui.colored_label(BLAST, status_fmt(&self.blast));
+            });
+            ui.vertical(|ui| {
+                ui.colored_label(TRANQ, "Tranq");
+                ui.colored_label(TRANQ, status_fmt(&self.tranq));
+            });
+        });
     }
 }
 
@@ -857,7 +890,7 @@ impl ResizeSense {
     }
 }
 
-fn handle_window_resize(ui: &mut egui::Ui, ctx: &egui::Context, window_rect: Rect) {
+fn handle_window_resize(ui: &mut egui::Ui, window_rect: Rect) {
     let style = ui.style();
     let side_grab_radius = style.interaction.resize_grab_radius_side;
     let corner_grab_radius = style.interaction.resize_grab_radius_corner;
@@ -935,20 +968,20 @@ fn handle_window_resize(ui: &mut egui::Ui, ctx: &egui::Context, window_rect: Rec
     resize.bottom.with(bottom_left);
 
     if let Some(direction) = resize.resize_direction() {
-        ctx.send_viewport_cmd(ViewportCommand::BeginResize(direction));
+        ui.send_viewport_cmd(ViewportCommand::BeginResize(direction));
     }
     if let Some(icon) = resize.cursor_icon() {
-        ctx.set_cursor_icon(icon);
+        ui.set_cursor_icon(icon);
     }
 }
 
-fn handle_zoom(ctx: &egui::Context) {
-    let delta = ctx.input(|i| i.zoom_delta());
+fn handle_zoom(ui: &egui::Ui) {
+    let delta = ui.input(|i| i.zoom_delta());
     if delta != 1. {
         let change = 1. + (1. - delta) * 0.5;
-        let current = ctx.zoom_factor();
+        let current = ui.zoom_factor();
         let new = (current * change).clamp(0.5, 2.);
-        ctx.set_zoom_factor(new);
+        ui.set_zoom_factor(new);
     }
 }
 

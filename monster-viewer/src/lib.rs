@@ -6,12 +6,12 @@ use std::{
 
 use anyhow::Result;
 use mimalloc::MiMalloc;
-use serde::Serialize;
+use shared::MonsterData;
 use tracing::{info, warn};
 use windows::Win32::{
     Foundation::{CloseHandle, HINSTANCE, HMODULE},
     System::{
-        Console::{AllocConsole, FreeConsole},
+        Console::AllocConsole,
         LibraryLoader::FreeLibraryAndExitThread,
         SystemServices::DLL_PROCESS_ATTACH,
         Threading::{CreateThread, THREAD_CREATION_FLAGS},
@@ -24,16 +24,8 @@ mod hzv;
 mod monster;
 use address::MHFOInfo;
 
-use crate::monster::{DamageInstance, Monster};
-
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
-
-#[derive(Serialize)]
-pub enum MonsterData {
-    Monsters(Vec<Monster>),
-    DamageInstance(DamageInstance),
-}
 
 fn handle_ui_connection(game_rx: Receiver<MonsterData>) -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6802")?;
@@ -49,12 +41,15 @@ fn handle_ui_connection(game_rx: Receiver<MonsterData>) -> Result<()> {
 
 fn fallible() -> Result<()> {
     if cfg!(debug_assertions) {
-        unsafe { AllocConsole()? };
         tracing_subscriber::fmt()
             .without_time()
             .with_ansi(false)
             .init();
-        info!("Debug console enabled");
+        if unsafe { AllocConsole().is_err() } {
+            warn!("Failed to allocate console, there might already be on.");
+        } else {
+            info!("Debug console enabled");
+        }
     }
     let addresses = MHFOInfo::find_main_dll().addresses();
     info!("Found dll address: {:X?}", addresses.dll);
@@ -76,7 +71,6 @@ extern "system" fn main(lp_parameter: *mut c_void) -> u32 {
     unsafe {
         FreeLibraryAndExitThread(HMODULE(lp_parameter), 0);
     }
-    1 // Never reached
 }
 
 #[unsafe(no_mangle)]

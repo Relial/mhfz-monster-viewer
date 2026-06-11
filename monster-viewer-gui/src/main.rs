@@ -9,17 +9,21 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-mod states;
+mod config;
 mod game_data;
 mod ipc;
 mod label;
 mod save;
+mod states;
 mod ui;
 
 const DEFAULT_SIZE: Vec2 = Vec2::new(550.0, 400.0);
 const DEFAULT_POS: Pos2 = Pos2::new(0.0, 200.0);
 
-use crate::{save::Save, ui::{MonsterStatesView, Viewer}};
+use crate::{
+    save::Save,
+    ui::{MonsterStatesView, Viewer},
+};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
@@ -44,7 +48,7 @@ fn main() -> Result<()> {
         persistence_path: Some(persistence_path),
         ..Default::default()
     };
-    if save.settings.always_on_top {
+    if save.config.always_on_top {
         options.viewport.window_level = Some(egui::WindowLevel::AlwaysOnTop);
     }
     eframe::run_native(
@@ -59,11 +63,11 @@ fn main() -> Result<()> {
                 wrap_mode: Some(egui::TextWrapMode::Extend),
                 ..Default::default()
             };
-            ctx.egui_ctx.set_style(style);
+            ctx.egui_ctx.set_global_style(style);
             ctx.egui_ctx.set_theme(egui::Theme::Dark);
             Ok(Box::new(Viewer::new(
                 ctx.egui_ctx.clone(),
-                save.settings,
+                save.config,
                 save.labels,
                 save.columns,
                 seen_states,

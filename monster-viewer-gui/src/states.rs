@@ -1,11 +1,9 @@
 use rapidhash::RapidHashSet;
 use serde::{Deserialize, Serialize};
+use shared::{HitzoneValues, MonsterPart};
 use tracing::{error, info};
 
-use crate::{
-    game_data::{HitzoneValues, MonsterPart},
-    ui::HzvColumn,
-};
+use crate::ui::HzvColumn;
 
 #[derive(Serialize, Deserialize)]
 pub struct MonstersWithStates(Vec<MonsterStates>);
@@ -34,10 +32,6 @@ impl MonstersWithStates {
 
     pub fn get(&self, monster_id: u8) -> Option<&MonsterStates> {
         self.0.get(monster_id as usize - 1)
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
     }
 
     fn get_mut(&mut self, monster_id: u8) -> Option<&mut MonsterStates> {

@@ -1,27 +1,20 @@
-use serde::Serialize;
+use shared::{AllStatus, Monster, MonsterPart, Poison, Status};
 use tracing::info;
 
 use crate::{
     address::Addresses,
-    hzv::{HitzoneInfo, HitzoneValues, get_hzv_info, get_hzvs},
+    hzv::{HitzoneInfoImpl as _, get_hzv_info, get_hzvs},
 };
 
 #[derive(Clone, Copy)]
 pub struct MonsterStruct(*const u8);
 
-#[derive(Serialize)]
-pub struct Monster {
-    pub struct_idx: u16,
-    pub monster_id: u8,
-    pub current_health: u16,
-    pub max_health: u16,
-    pub attack_multi: f32,
-    pub defense_multi: f32,
-    pub parts: Vec<MonsterPart>,
+pub trait MonsterImpl {
+    fn from_struct(adddresses: &Addresses, monster_struct: MonsterStruct) -> Self;
 }
 
-impl Monster {
-    pub fn from_struct(addresses: &Addresses, monster_struct: MonsterStruct) -> Self {
+impl MonsterImpl for Monster {
+    fn from_struct(addresses: &Addresses, monster_struct: MonsterStruct) -> Self {
         let mut parts: Vec<MonsterPart> = Vec::new();
         let struct_idx = monster_struct.struct_idx();
         let monster_id = monster_struct.monster_id();
@@ -70,6 +63,7 @@ impl Monster {
         let max_health = monster_struct.max_health(addresses);
         let attack_multi = monster_struct.attack_multi();
         let defense_multi = monster_struct.defense_multi();
+        let status = monster_struct.status();
         parts.sort_by_key(|part| (part.part_idx, part.hzv_idx));
 
         Self {
@@ -80,17 +74,9 @@ impl Monster {
             attack_multi,
             defense_multi,
             parts,
+            status,
         }
     }
-}
-
-#[derive(Serialize, Clone, Copy)]
-pub struct MonsterPart {
-    pub part_idx: u16,
-    pub hzv_idx: u16,
-    pub part_health: i16,
-    pub hzvs: HitzoneValues,
-    pub hitzone_count: usize,
 }
 
 impl MonsterStruct {
@@ -153,11 +139,78 @@ impl MonsterStruct {
     pub fn hitzone_check_3(&self) -> u16 {
         unsafe { (self.0.wrapping_byte_add(0xB5C) as *const u16).read() }
     }
-}
 
-#[derive(Serialize, Clone, Copy)]
-pub struct DamageInstance {
-    pub monster_id: u8,
-    pub struct_idx: u16,
-    pub hitzone: HitzoneInfo,
+    fn poison(&self) -> Poison {
+        unsafe {
+            let ptr = self.0;
+            let threshold = (ptr.wrapping_byte_add(0x888) as *const i16).read();
+            let current = (ptr.wrapping_byte_add(0x88A) as *const i16).read();
+            let duration_raw = (ptr.wrapping_byte_add(0x890) as *const u16).read();
+            let duration = if duration_raw > 0 {
+                Some(duration_raw)
+            } else {
+                None
+            };
+            Poison {
+                base: Status { threshold, current },
+                duration,
+            }
+        }
+    }
+
+    fn paralysis(&self) -> Status {
+        unsafe {
+            let ptr = self.0;
+            let threshold = (ptr.wrapping_byte_add(0x880) as *const i16).read();
+            let current = (ptr.wrapping_byte_add(0x886) as *const i16).read();
+            Status { threshold, current }
+        }
+    }
+
+    fn sleep(&self) -> Status {
+        unsafe {
+            let ptr = self.0;
+            let threshold = (ptr.wrapping_byte_add(0x86A) as *const i16).read();
+            let current = (ptr.wrapping_byte_add(0x86C) as *const i16).read();
+            Status { threshold, current }
+        }
+    }
+
+    fn stun(&self) -> Status {
+        unsafe {
+            let ptr = self.0;
+            let threshold = (ptr.wrapping_byte_add(0xA74) as *const i16).read();
+            let current = (ptr.wrapping_byte_add(0x872) as *const i16).read();
+            Status { threshold, current }
+        }
+    }
+
+    fn tranq(&self) -> Status {
+        unsafe {
+            let ptr = self.0;
+            let threshold = (ptr.wrapping_byte_add(0x878) as *const i16).read();
+            let current = (ptr.wrapping_byte_add(0x87A) as *const i16).read();
+            Status { threshold, current }
+        }
+    }
+
+    fn blast(&self) -> Status {
+        unsafe {
+            let ptr = self.0;
+            let threshold = (ptr.wrapping_byte_add(0xD48) as *const i16).read();
+            let current = (ptr.wrapping_byte_add(0xD4A) as *const i16).read();
+            Status { threshold, current }
+        }
+    }
+
+    pub fn status(&self) -> AllStatus {
+        AllStatus {
+            poison: self.poison(),
+            paralysis: self.paralysis(),
+            sleep: self.sleep(),
+            stun: self.stun(),
+            tranq: self.tranq(),
+            blast: self.blast(),
+        }
+    }
 }

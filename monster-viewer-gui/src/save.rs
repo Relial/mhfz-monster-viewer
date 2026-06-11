@@ -9,9 +9,10 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    states::MonstersWithStates,
+    config::Config,
     label::Labels,
-    ui::{Settings, TABLE_COLUMNS, TableColumn, Viewer},
+    states::MonstersWithStates,
+    ui::{TABLE_COLUMNS, TableColumn, Viewer},
 };
 
 const SETTINGS_FILENAME: &str = "settings.json";
@@ -21,7 +22,7 @@ const STATES_FILENAME: &str = "seen_states.json";
 #[derive(Serialize, Deserialize)]
 #[serde(rename = "Settings")]
 pub struct Save {
-    pub settings: Settings,
+    pub config: Config,
     pub columns: [TableColumn; 13],
     pub labels: Labels,
     pub states: MonstersWithStates,
@@ -36,8 +37,8 @@ impl Save {
         let settings_path = exe_dir.join(SETTINGS_FILENAME);
         let labels_path = exe_dir.join(LABELS_FILENAME);
         let states_path = exe_dir.join(STATES_FILENAME);
-        let (settings, mut columns) =
-            load_settings(&settings_path).unwrap_or_else(|_| (Settings::default(), TABLE_COLUMNS));
+        let (config, mut columns) =
+            load_settings(&settings_path).unwrap_or_else(|_| (Config::default(), TABLE_COLUMNS));
         let labels = load_labels(&labels_path).unwrap_or_else(|_| Labels::default());
         let states =
             load_monster_states(&states_path).unwrap_or_else(|_| MonstersWithStates::new());
@@ -46,7 +47,7 @@ impl Save {
             save.color = def.color;
         }
         let save = Save {
-            settings,
+            config,
             columns,
             labels,
             states,
@@ -55,7 +56,7 @@ impl Save {
     }
 }
 
-fn load_settings(path: &Path) -> Result<(Settings, [TableColumn; 13])> {
+fn load_settings(path: &Path) -> Result<(Config, [TableColumn; 13])> {
     let settings_file = File::open(path)?;
     let settings_reader = BufReader::new(settings_file);
     let (settings, columns) = serde_json::from_reader(settings_reader)?;
@@ -90,7 +91,7 @@ pub fn save_settings(viewer: &Viewer) -> Result<()> {
     let settings_writer = BufWriter::new(settings_file);
     let labels_writer = BufWriter::new(labels_file);
     let states_writer = BufWriter::new(states_file);
-    serde_json::to_writer_pretty(settings_writer, &(viewer.settings, viewer.columns))?;
+    serde_json::to_writer_pretty(settings_writer, &(viewer.config, viewer.columns))?;
     serde_json::to_writer(labels_writer, &viewer.labels)?;
     serde_json::to_writer(states_writer, &viewer.states.seen_states)?;
     Ok(())
@@ -99,7 +100,7 @@ pub fn save_settings(viewer: &Viewer) -> Result<()> {
 impl Default for Save {
     fn default() -> Self {
         Self {
-            settings: Default::default(),
+            config: Default::default(),
             columns: TABLE_COLUMNS,
             labels: Default::default(),
             states: MonstersWithStates::new(),

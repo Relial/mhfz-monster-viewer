@@ -1,5 +1,4 @@
-use glam::Vec3;
-use serde::{Deserialize, Serialize};
+use shared::MonsterPart;
 
 use crate::ui::HzvColumn;
 
@@ -361,28 +360,13 @@ pub const MONSTERS_ALPHABETICAL: [(u8, &str); MONSTER_COUNT] = [
     (146, "Zinogre"),
 ];
 
-#[derive(Deserialize, Clone)]
-pub struct Monster {
-    pub struct_idx: u16,
-    pub monster_id: u8,
-    pub current_health: u16,
-    pub max_health: u16,
-    pub attack_multi: f32,
-    pub defense_multi: f32,
-    pub parts: Vec<MonsterPart>,
+pub trait MonsterPartExt {
+    fn table_display(&self, column: HzvColumn) -> String;
+    fn get_changes(&self, other: &Self) -> Option<[bool; 13]>;
 }
 
-#[derive(Clone, Copy, Deserialize)]
-pub struct MonsterPart {
-    pub part_idx: u16,
-    pub hzv_idx: u16,
-    pub part_health: i16,
-    pub hzvs: HitzoneValues,
-    pub hitzone_count: usize,
-}
-
-impl MonsterPart {
-    pub fn table_display(&self, column: HzvColumn) -> String {
+impl MonsterPartExt for MonsterPart {
+    fn table_display(&self, column: HzvColumn) -> String {
         match column {
             HzvColumn::Part => self.part_idx.to_string(),
             HzvColumn::Hzv => self.hzv_idx.to_string(),
@@ -400,7 +384,7 @@ impl MonsterPart {
         }
     }
 
-    pub fn get_changes(&self, other: &Self) -> Option<[bool; 13]> {
+    fn get_changes(&self, other: &Self) -> Option<[bool; 13]> {
         if self.part_idx != other.part_idx {
             return Some([true; 13]);
         }
@@ -449,67 +433,10 @@ impl MonsterPart {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct HitzoneValues {
-    _unk: u8,
-    pub cut: u8,
-    pub impact: u8,
-    pub shot: u8,
-    pub fire: i8,
-    pub water: i8,
-    pub ice: i8,
-    pub thunder: i8,
-    pub dragon: i8,
-    pub stun: u8,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize)]
-pub struct HitzoneInfo {
-    unk0: u16,
-    pub second_vector_indicator: u16,
-    pub hzv_idx: u16,
-    pub part_idx: u16,
-    flags: [u8; 4],
-    pub scale: f32,
-    pub vec1: Vec3,
-    pub vec2: Vec3,
-}
-
-#[derive(Deserialize, Clone, Copy, Debug)]
-pub struct DamageInstance {
-    pub monster_id: u8,
-    pub struct_idx: u16,
-    pub hitzone: HitzoneInfo,
-}
-
 pub fn monster_name(id: u8) -> &'static str {
     if (1..=MONSTER_COUNT).contains(&(id as usize)) {
         MONSTER_NAMES[(id - 1) as usize]
     } else {
         "Unknown ID"
-    }
-}
-
-impl PartialEq for Monster {
-    fn eq(&self, other: &Self) -> bool {
-        self.struct_idx == other.struct_idx && self.monster_id == other.monster_id
-    }
-}
-
-impl PartialEq for MonsterPart {
-    fn eq(&self, other: &Self) -> bool {
-        self.part_idx == other.part_idx && self.hzv_idx == other.hzv_idx && self.hzvs == other.hzvs
-    }
-}
-
-impl Eq for MonsterPart {}
-
-impl std::hash::Hash for MonsterPart {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.part_idx.hash(state);
-        self.hzv_idx.hash(state);
-        self.hzvs.hash(state);
     }
 }
