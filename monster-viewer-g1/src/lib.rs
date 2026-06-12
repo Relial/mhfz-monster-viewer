@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use mimalloc::MiMalloc;
-use serde::Serialize;
+use shared::MonsterData;
 use tracing::{info, warn};
 use windows::Win32::{
     Foundation::{CloseHandle, HINSTANCE, HMODULE},
@@ -23,19 +23,10 @@ mod hooks;
 mod hzv;
 mod monster;
 
-use crate::{
-    address::find_main_dll,
-    monster::{DamageInstance, Monster},
-};
+use crate::address::find_main_dll;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
-
-#[derive(Serialize)]
-pub enum MonsterData {
-    Monsters(Vec<Monster>),
-    DamageInstance(DamageInstance),
-}
 
 fn handle_ui_connection(game_rx: Receiver<MonsterData>) -> Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6802")?;

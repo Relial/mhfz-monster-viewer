@@ -3,12 +3,11 @@ use std::sync::mpsc::Sender;
 use anyhow::{Result, anyhow};
 use ilhook::x86::CallbackOption;
 use ilhook::x86::{ClosureHookPoint, HookFlags, Registers, hook_closure_jmp_back};
+use shared::{DamageInstance, HitzoneInfo, Monster, MonstersMessage};
 
 use crate::MonsterData;
-use crate::hzv::HitzoneInfo;
-use crate::monster::DamageInstance;
-use crate::monster::MonsterStruct;
-use crate::{address::Addresses, monster::Monster};
+use crate::address::Addresses;
+use crate::monster::{MonsterImpl as _, MonsterStruct};
 
 fn hook_quest_func<'a>(
     addresses: Addresses,
@@ -22,7 +21,19 @@ fn hook_quest_func<'a>(
                 monsters.push(monster);
             }
             if !monsters.is_empty() {
-                let _ = tx.send(MonsterData::Monsters(monsters));
+                let (time_limit, time_remaining) = if let Some(quest) = addresses.quest_info()
+                    && let Some(time_limit) = quest.time_limit()
+                {
+                    (time_limit, quest.time_remaining())
+                } else {
+                    (0, 0)
+                };
+                let message = MonstersMessage {
+                    time_limit,
+                    time_remaining,
+                    monsters,
+                };
+                let _ = tx.send(MonsterData::Monsters(message));
             }
         }
     };

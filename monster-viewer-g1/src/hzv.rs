@@ -1,25 +1,15 @@
 use std::arch::asm;
 
-use glam::Vec3;
-use serde::Serialize;
+use shared::{HitzoneInfo, HitzoneValues};
 
 use crate::{address::Addresses, monster::MonsterStruct};
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Serialize)]
-pub struct HitzoneInfo {
-    unk0: u16,
-    pub second_vector_indicator: u16,
-    pub hzv_idx: u16,
-    pub part_idx: u16,
-    flags: [u8; 4],
-    pub scale: f32,
-    pub vec1: Vec3,
-    pub vec2: Vec3,
+pub trait HitzoneInfoImpl {
+    fn is_real(&self, check1: u8, check2: u8, check3: u16) -> HitzoneValidity;
 }
 
-impl HitzoneInfo {
-    pub fn is_real(&self, check1: u8, _check2: u8, check3: u16) -> HitzoneValidity {
+impl HitzoneInfoImpl for HitzoneInfo {
+    fn is_real(&self, check1: u8, _check2: u8, check3: u16) -> HitzoneValidity {
         if self.unk0 == 0x7D {
             if self.second_vector_indicator & check3 == 0 {
                 HitzoneValidity::Invalid
@@ -44,21 +34,6 @@ pub enum HitzoneValidity {
     Valid,
     Invalid,
     InvalidSkipNextN(u16),
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Serialize, PartialEq)]
-pub struct HitzoneValues {
-    _unk: u8,
-    pub cut: u8,
-    pub impact: u8,
-    pub shot: u8,
-    pub fire: i8,
-    pub water: i8,
-    pub ice: i8,
-    pub thunder: i8,
-    pub dragon: i8,
-    pub stun: u8,
 }
 
 pub fn get_hzvs(
