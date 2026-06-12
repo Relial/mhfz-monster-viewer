@@ -2,26 +2,30 @@ use std::{
     borrow::Borrow,
     fmt::Display,
     hash::Hash,
-    sync::mpsc::{self, Receiver},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::{self, Receiver},
+    },
     thread,
     time::{Duration, Instant},
 };
 
 use circular_buffer::CircularBuffer;
 use egui::{
-    self, Align, CollapsingHeader, Color32, CornerRadius, CursorIcon, Direction, Frame, Grid,
-    Layout, Margin, Pos2, Rect, ResizeDirection, RichText, Sense, Shadow, Stroke, TextEdit, Vec2,
-    ViewportCommand, WindowLevel, scroll_area::ScrollSource, vec2,
+    self, Align, CollapsingHeader, Color32, ComboBox, CornerRadius, CursorIcon, Direction, FontId,
+    Frame, Grid, Label, Layout, Margin, Pos2, Rect, ResizeDirection, RichText, Sense, Shadow,
+    Stroke, TextEdit, Vec2, ViewportCommand, WindowLevel, scroll_area::ScrollSource, vec2,
 };
 use egui_extras::{Column, TableBuilder};
 use num_format::{Locale, ToFormattedString};
 use rapidhash::RapidHashSet;
 use serde::{Deserialize, Serialize};
 use shared::{AllStatus, DamageInstance, Monster, MonsterData, Status};
-use strum::FromRepr;
+use strum::{EnumIter, FromRepr};
 
 use crate::{
-    config::Config,
+    config::{Config, TimerDirection},
     game_data::{MONSTERS_ALPHABETICAL, MonsterPartExt as _, monster_name},
     ipc::handle_game_connection,
     label::Labels,
@@ -70,7 +74,7 @@ const PANEL_FRAME: Frame = Frame {
     shadow: Shadow::NONE,
 };
 
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, FromRepr)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, FromRepr, EnumIter)]
 pub enum HzvColumn {
     Part,
     Hzv,
@@ -206,6 +210,46 @@ impl HitLogStats {
     }
 }
 
+pub struct QuestTime {
+    time_limit: AtomicU32,
+    time_remaining: AtomicU32,
+    display: AtomicBool,
+}
+
+impl QuestTime {
+    pub fn new(display: bool) -> Self {
+        Self {
+            time_limit: AtomicU32::new(0),
+            time_remaining: AtomicU32::new(0),
+            display: AtomicBool::new(display),
+        }
+    }
+
+    pub fn time_limit(&self) -> u32 {
+        self.time_limit.load(Ordering::Relaxed)
+    }
+
+    pub fn time_remaining(&self) -> u32 {
+        self.time_remaining.load(Ordering::Relaxed)
+    }
+
+    pub fn display(&self) -> bool {
+        self.display.load(Ordering::Relaxed)
+    }
+
+    pub fn set_time_limit(&self, value: u32) {
+        self.time_limit.store(value, Ordering::Relaxed);
+    }
+
+    pub fn set_time_remaining(&self, value: u32) {
+        self.time_remaining.store(value, Ordering::Relaxed);
+    }
+
+    pub fn set_display(&self, display: bool) {
+        self.display.store(display, Ordering::Relaxed);
+    }
+}
+
 pub struct Viewer {
     pub config: Config,
     ipc_rx: Receiver<(MonsterData, Vec<Highlight>)>,
@@ -216,6 +260,7 @@ pub struct Viewer {
     pub labels: Labels,
     highlights: RapidHashSet<Highlight>,
     pub states: MonsterStatesView,
+    quest_time: Arc<QuestTime>,
 }
 
 impl eframe::App for Viewer {
@@ -245,6 +290,10 @@ impl eframe::App for Viewer {
                             .show(ui, |ui| {
                                 ui.take_available_space();
                                 self.receive_data();
+
+                                if self.config.visibility.quest_time {
+                                    self.quest_timer(ui);
+                                }
                                 self.settings(ui);
                                 let enabled_columns: Vec<TableColumn> = self
                                     .columns
@@ -281,6 +330,7 @@ impl Viewer {
         states_view: MonsterStatesView,
     ) -> Self {
         let (ipc_tx, ipc_rx) = mpsc::channel();
+        let quest_time = Arc::new(QuestTime::new(config.visibility.quest_time));
         let viewer = Self {
             config,
             ipc_rx,
@@ -291,9 +341,10 @@ impl Viewer {
             highlights: RapidHashSet::default(),
             states: states_view,
             hit_log_stats: HitLogStats::new(),
+            quest_time: quest_time.clone(),
         };
         thread::spawn(|| {
-            handle_game_connection(ctx, ipc_tx);
+            handle_game_connection(ctx, ipc_tx, quest_time);
         });
         viewer
     }
@@ -305,8 +356,14 @@ impl Viewer {
         let resp = ui.interact(button_rect, "Close button".into(), Sense::click());
         let painter = ui.painter();
         let visuals = ui.style().interact(&resp);
-        painter.line_segment([button_rect.left_top(), button_rect.right_bottom()], visuals.fg_stroke);
-        painter.line_segment([button_rect.left_bottom(), button_rect.right_top()], visuals.fg_stroke);
+        painter.line_segment(
+            [button_rect.left_top(), button_rect.right_bottom()],
+            visuals.fg_stroke,
+        );
+        painter.line_segment(
+            [button_rect.left_bottom(), button_rect.right_top()],
+            visuals.fg_stroke,
+        );
         if resp.clicked() {
             ui.send_viewport_cmd(ViewportCommand::Close);
         }
@@ -332,7 +389,32 @@ impl Viewer {
             }
             ui.checkbox(&mut self.config.highlight_changes, "Highlight changes");
 
+            ui.horizontal(|ui| {
+                ui.label("Timer direction:");
+                ComboBox::from_id_salt("Timer direction")
+                    .selected_text(self.config.timer_direction.to_string())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut self.config.timer_direction,
+                            TimerDirection::CountUp,
+                            TimerDirection::CountUp.to_string(),
+                        );
+                        ui.selectable_value(
+                            &mut self.config.timer_direction,
+                            TimerDirection::CountDown,
+                            TimerDirection::CountDown.to_string(),
+                        );
+                    });
+            });
+
             CollapsingHeader::new("Visibility").show(ui, |ui| {
+                if ui
+                    .checkbox(&mut self.config.visibility.quest_time, "Quest time")
+                    .changed()
+                {
+                    self.quest_time
+                        .set_display(self.config.visibility.quest_time);
+                }
                 ui.checkbox(&mut self.config.visibility.health, "Health");
                 ui.checkbox(&mut self.config.visibility.attack, "Attack");
                 ui.checkbox(&mut self.config.visibility.defense, "Defense");
@@ -359,13 +441,13 @@ impl Viewer {
     fn receive_data(&mut self) {
         while let Ok((monster_data, highlights)) = self.ipc_rx.try_recv() {
             match monster_data {
-                MonsterData::Monsters(monsters) => {
-                    for monster in &monsters {
+                MonsterData::Monsters(monsters_message) => {
+                    for monster in &monsters_message.monsters {
                         self.states
                             .seen_states
                             .handle_new(monster.monster_id, &monster.parts);
                     }
-                    self.monsters = monsters;
+                    self.monsters = monsters_message.monsters;
                     if self.config.highlight_changes {
                         for new in highlights {
                             self.highlights.replace(new);
@@ -378,6 +460,34 @@ impl Viewer {
                 }
             }
         }
+    }
+
+    fn quest_timer(&self, ui: &mut egui::Ui) {
+        let (time_secs, limit_secs) = match self.config.timer_direction {
+            TimerDirection::CountUp => {
+                let limit = self.quest_time.time_limit();
+                let remaining = self.quest_time.time_remaining();
+                ((limit - remaining) / 30, limit / 30)
+            }
+            TimerDirection::CountDown => (
+                self.quest_time.time_remaining() / 30,
+                self.quest_time.time_limit() / 30,
+            ),
+        };
+        let timer_string = format!(
+            "{}:{:02} / {}:{:02}",
+            time_secs / 60,
+            time_secs % 60,
+            limit_secs / 60,
+            limit_secs % 60
+        );
+        ui.vertical_centered(|ui| {
+            ui.add(Label::new(
+                RichText::new(timer_string)
+                    .font(FontId::proportional(24.0))
+                    .color(Color32::WHITE),
+            ));
+        });
     }
 
     fn history(&mut self, ui: &mut egui::Ui, enabled_columns: &[TableColumn]) {

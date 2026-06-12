@@ -362,7 +362,7 @@ pub const MONSTERS_ALPHABETICAL: [(u8, &str); MONSTER_COUNT] = [
 
 pub trait MonsterPartExt {
     fn table_display(&self, column: HzvColumn) -> String;
-    fn get_changes(&self, other: &Self) -> Option<[bool; 13]>;
+    fn changed(&self, other: &Self, column: HzvColumn) -> bool;
 }
 
 impl MonsterPartExt for MonsterPart {
@@ -384,51 +384,22 @@ impl MonsterPartExt for MonsterPart {
         }
     }
 
-    fn get_changes(&self, other: &Self) -> Option<[bool; 13]> {
-        if self.part_idx != other.part_idx {
-            return Some([true; 13]);
-        }
-        let mut changes = [false; 13];
-        if self.hzv_idx != other.hzv_idx {
-            changes[1] = true;
-        }
-        if self.hitzone_count != other.hitzone_count {
-            changes[2] = true;
-        }
-        if self.part_health != other.part_health {
-            changes[3] = true;
-        }
-        if self.hzvs.cut != other.hzvs.cut {
-            changes[4] = true;
-        }
-        if self.hzvs.impact != other.hzvs.impact {
-            changes[5] = true;
-        }
-        if self.hzvs.shot != other.hzvs.shot {
-            changes[6] = true;
-        }
-        if self.hzvs.fire != other.hzvs.fire {
-            changes[7] = true;
-        }
-        if self.hzvs.water != other.hzvs.water {
-            changes[8] = true;
-        }
-        if self.hzvs.ice != other.hzvs.ice {
-            changes[9] = true;
-        }
-        if self.hzvs.thunder != other.hzvs.thunder {
-            changes[10] = true;
-        }
-        if self.hzvs.dragon != other.hzvs.dragon {
-            changes[11] = true;
-        }
-        if self.hzvs.stun != other.hzvs.stun {
-            changes[12] = true;
-        }
-        if changes.iter().all(|c| !c) {
-            None
-        } else {
-            Some(changes)
+    #[inline]
+    fn changed(&self, other: &Self, column: HzvColumn) -> bool {
+        match column {
+            HzvColumn::Part => self.part_idx != other.part_idx,
+            HzvColumn::Hzv => self.hzv_idx != other.hzv_idx,
+            HzvColumn::Count => self.hitzone_count != other.hitzone_count,
+            HzvColumn::Health => self.part_health != other.part_health,
+            HzvColumn::Cut => self.hzvs.cut != other.hzvs.cut,
+            HzvColumn::Impact => self.hzvs.impact != other.hzvs.impact,
+            HzvColumn::Shot => self.hzvs.shot != other.hzvs.shot,
+            HzvColumn::Fire => self.hzvs.fire != other.hzvs.fire,
+            HzvColumn::Water => self.hzvs.water != other.hzvs.water,
+            HzvColumn::Ice => self.hzvs.ice != other.hzvs.ice,
+            HzvColumn::Thunder => self.hzvs.thunder != other.hzvs.thunder,
+            HzvColumn::Dragon => self.hzvs.dragon != other.hzvs.dragon,
+            HzvColumn::Stun => self.hzvs.stun != other.hzvs.stun,
         }
     }
 }

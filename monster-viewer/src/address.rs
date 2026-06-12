@@ -26,6 +26,7 @@ pub struct Addresses {
     player_structs: usize,
     monster_structs: usize,
     player_info: usize,
+    quest_info: usize,
 }
 
 impl MHFOInfo {
@@ -64,6 +65,7 @@ impl Addresses {
             player_structs: dll + 0x5033B90,
             monster_structs: dll + 0x614058C,
             player_info: dll + 0x5BC830C,
+            quest_info: dll + 0x5bc85bc,
         }
     }
 
@@ -80,6 +82,7 @@ impl Addresses {
             player_structs: dll + 0xDC6B750,
             monster_structs: dll + 0xED7AD2C,
             player_info: dll + 0xE7FFF3C,
+            quest_info: dll + 0xe8001ec,
         }
     }
 
@@ -124,9 +127,30 @@ impl Addresses {
         let idx = self.own_player_idx()?;
         Some(self.player_structs + (idx * 0x1050))
     }
+
+    pub fn quest_info(&self) -> Option<QuestInfo> {
+        QuestInfo::from_addr(self.quest_info)
+    }
 }
 
 fn monster_exists(ptr: *const u8) -> bool {
     let flags = unsafe { slice::from_raw_parts(ptr, 2) };
     flags[0] == 1 && flags[1] == 1
+}
+
+pub struct QuestInfo(*const u8);
+
+impl QuestInfo {
+    fn from_addr(addr: usize) -> Option<Self> {
+        let ptr = unsafe { (addr as *const *const u8).read() };
+        if ptr.is_null() { None } else { Some(Self(ptr)) }
+    }
+
+    pub fn time_limit(&self) -> u32 {
+        unsafe { (self.0.wrapping_byte_add(0x14) as *const u32).read() }
+    }
+
+    pub fn time_remaining(&self) -> u32 {
+        unsafe { (self.0.wrapping_byte_add(0x10) as *const u32).read() }
+    }
 }

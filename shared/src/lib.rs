@@ -2,16 +2,16 @@ use glam::Vec3;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct ViewerMessage {
-    pub time_limit: u32,
-    pub time_remaining: u32,
-    pub data: MonsterData,
+pub enum MonsterData {
+    Monsters(MonstersMessage),
+    DamageInstance(DamageInstance),
 }
 
 #[derive(Serialize, Deserialize)]
-pub enum MonsterData {
-    Monsters(Vec<Monster>),
-    DamageInstance(DamageInstance),
+pub struct MonstersMessage {
+    pub time_limit: u32,
+    pub time_remaining: u32,
+    pub monsters: Vec<Monster>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
