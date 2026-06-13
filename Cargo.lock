@@ -1861,7 +1861,7 @@ dependencies = [
 
 [[package]]
 name = "monster-viewer"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "glam 0.32.0",
@@ -1872,12 +1872,12 @@ dependencies = [
  "shared",
  "tracing",
  "tracing-subscriber",
- "windows 0.62.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
 name = "monster-viewer-g1"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "glam 0.32.0",
@@ -1888,12 +1888,12 @@ dependencies = [
  "shared",
  "tracing",
  "tracing-subscriber",
- "windows 0.62.2",
+ "windows 0.61.3",
 ]
 
 [[package]]
 name = "monster-viewer-gui"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -2940,7 +2940,7 @@ dependencies = [
 
 [[package]]
 name = "shared"
-version = "0.1.0"
+version = "0.3.3"
 dependencies = [
  "glam 0.33.1",
  "serde",
